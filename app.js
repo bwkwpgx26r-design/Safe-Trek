@@ -340,6 +340,20 @@ function injectRouteCardCSS(){
       background: linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02));
     }
     .stPreview canvas{ display:block; width:100%; height:96px; }
+    .stPreview,
+.stPreview canvas{
+  pointer-events: none;
+}
+
+.stActions{
+  position: relative;
+  z-index: 5;
+}
+
+.stPreview{
+  position: relative;
+  z-index: 1;
+}
     .stStats{ display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
     .stPill{
       border:1px solid rgba(255,255,255,0.10);
