@@ -677,6 +677,7 @@ chatEl.appendChild(row);
 
 state.chat.step = "after_route";
 saveState();
+showView("chat");
 renderChat();
 return;
   }catch{
