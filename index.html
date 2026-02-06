@@ -11,10 +11,10 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 
-  <!-- Basic Icon (you can replace later) -->
+  <!-- Icons (lege logo.png, icon-192.png, icon-512.png im Repo-Root ab) -->
   <link rel="icon" href="./icon-192.png" />
 
-  <!-- Leaflet (Map) -->
+  <!-- Leaflet -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
@@ -22,56 +22,62 @@
 </head>
 
 <body>
-  <!-- App Shell -->
-  <div class="app">
+  <!-- SPLASH / INTRO -->
+  <div id="splash" class="splash">
+    <div class="splash__inner">
+      <!-- ⚠️ Datei muss im Repo liegen: logo.png -->
+      <img src="./logo.png" class="splash__logo" alt="SafeTrek Logo">
+      <div class="splash__text">SafeTrek</div>
+    </div>
+  </div>
 
-    <!-- Top Bar -->
+  <div class="app">
+    <!-- TOP BAR -->
     <header class="topbar">
       <div class="topbar__title">SafeTrek</div>
       <div class="topbar__right">
+        <!-- diese IDs sind bewusst stabil gehalten -->
         <button class="iconbtn" id="btnOpenChat" type="button" title="Chat öffnen">💬</button>
         <button class="iconbtn" id="btnOpenDash" type="button" title="Dashboard">🏠</button>
       </div>
     </header>
 
-    <!-- Views -->
+    <!-- VIEWS -->
     <main class="views">
 
       <!-- DASHBOARD -->
       <section class="view" data-view="dash" id="viewDash">
         <div class="panel">
           <div class="panel__title">Start</div>
-          <div class="panel__desc">
-            Moderne Outdoor-Planung, die sich an dich anpasst.
-          </div>
+          <div class="panel__desc">Outdoor-Planung, die sich an dich anpasst.</div>
 
           <div class="grid2">
             <div class="card">
               <div class="card__title">Chat starten</div>
-              <div class="card__meta">Concierge-Modus • Profil + Touren</div>
+              <div class="card__meta">Profil + Touren + Plan A/B/C + Assisted Exit</div>
               <button class="primary" id="dashStartChat" type="button">Jetzt starten</button>
             </div>
 
             <div class="card">
-              <div class="card__title">Routen finden</div>
-              <div class="card__meta">Region + Radius • Vorschläge als Cards</div>
+              <div class="card__title">Touren vorschlagen</div>
+              <div class="card__meta">Schnellstart: Region + Radius → Suche im Chat</div>
 
               <label class="field">
                 <span>Region</span>
-                <input id="dashRegion" placeholder="z.B. München / Salzburg" />
+                <input id="dashRegion" placeholder="z.B. München / Salzburg / Innsbruck" />
               </label>
 
               <label class="field">
                 <span>Radius (km)</span>
-                <input id="dashRadius" type="number" min="5" max="200" value="20" />
+                <input id="dashRadius" type="number" min="5" max="200" value="25" />
               </label>
 
-              <button class="secondary" id="dashSuggest" type="button">Touren vorschlagen</button>
+              <button class="secondary" id="dashSuggest" type="button">Touren finden</button>
             </div>
           </div>
 
           <div class="hint">
-            Tipp: Du kannst die App als Icon auf dem Home Screen speichern (Safari → Teilen → „Zum Home-Bildschirm“).
+            Tipp: In Safari → Teilen → „Zum Home-Bildschirm“, dann fühlt es sich wie eine App an.
           </div>
         </div>
       </section>
@@ -80,7 +86,6 @@
       <section class="view" data-view="chat" id="viewChat">
         <div class="chatWrap">
           <div id="chatMessages" class="chatMessages"></div>
-
           <div id="quickReplies" class="quickReplies"></div>
 
           <div class="chatComposer">
@@ -107,16 +112,16 @@
       </section>
 
     </main>
-
   </div>
 
+  <!-- FALLBACK: view switch (app.js kann das überschreiben, aber das hier ist stabil) -->
   <script>
-    // Minimal view switch fallback if app.js calls showView()
     window.showView = function(name){
       document.querySelectorAll("[data-view]").forEach(v=>{
         v.style.display = (v.getAttribute("data-view") === name) ? "block" : "none";
       });
-      // store for app.js compatibility
+
+      // Persist optional (nur falls app.js state so nutzt)
       try {
         const raw = localStorage.getItem("safetreks_state");
         if(raw){
@@ -128,60 +133,90 @@
     };
   </script>
 
+  <!-- APP LOGIC -->
   <script src="./app.js"></script>
 
   <script>
-    // Simple dashboard wiring (optional helper)
-    const dashStartChat = document.getElementById("dashStartChat");
-    const dashSuggest = document.getElementById("dashSuggest");
-    const dashRegion = document.getElementById("dashRegion");
-    const dashRadius = document.getElementById("dashRadius");
-    const btnOpenDash = document.getElementById("btnOpenDash");
+    // --- UI Wiring ---
+    const btnOpenChat  = document.getElementById("btnOpenChat");
+    const btnOpenDash  = document.getElementById("btnOpenDash");
+    const dashStartChat= document.getElementById("dashStartChat");
+    const dashSuggest  = document.getElementById("dashSuggest");
+    const dashRegion   = document.getElementById("dashRegion");
+    const dashRadius   = document.getElementById("dashRadius");
 
-    if(btnOpenDash){
-      btnOpenDash.onclick = () => window.showView("dash");
+    // Safe default view
+    window.showView("dash");
+
+    if(btnOpenDash) btnOpenDash.onclick = () => window.showView("dash");
+
+    // Chat öffnen: bevorzugt echte app.js Funktion, sonst View wechseln
+    if(btnOpenChat){
+      btnOpenChat.onclick = () => {
+        if (typeof startChat === "function") startChat();
+        window.showView("chat");
+      };
     }
 
     if(dashStartChat){
       dashStartChat.onclick = () => {
-        // app.js wires btnOpenChat; we trigger that
-        const btn = document.getElementById("btnOpenChat");
-        if(btn) btn.click();
-        else window.showView("chat");
+        if (typeof startChat === "function") startChat();
+        window.showView("chat");
       };
     }
 
+    // Touren finden: startet Chat sauber + schickt Region/Radius in den Chat
     if(dashSuggest){
       dashSuggest.onclick = () => {
-        // push into chat: "Touren vorschlagen" flow
+        // 1) Chat starten (wichtig!)
+        if (typeof startChat === "function") startChat();
         window.showView("chat");
-        // place region/radius into input sequence
+
+        // 2) Eingabefelder holen
         const input = document.getElementById("chatInput");
-        const send = document.getElementById("chatSend");
+        const send  = document.getElementById("chatSend");
+        if(!input || !send) return;
 
-        // Try to start chat first
-        const btn = document.getElementById("btnOpenChat");
-        if(btn) btn.click();
+        const region = (dashRegion?.value || "").trim();
+        const radius = String(Number(dashRadius?.value || 25));
 
-        // Then ask for routes
-        setTimeout(()=>{
-          input.value = "Touren vorschlagen";
+        // 3) zuverlässig triggern: "neue planung" (passt zu deinem app.js global command)
+        //    Danach Region + Radius schicken.
+        setTimeout(() => {
+          input.value = "neue planung";
           send.click();
-          setTimeout(()=>{
-            if(dashRegion.value.trim()){
-              input.value = dashRegion.value.trim();
+
+          setTimeout(() => {
+            if(region){
+              input.value = region;
               send.click();
-              setTimeout(()=>{
-                input.value = String(Number(dashRadius.value || 20));
+
+              setTimeout(() => {
+                input.value = radius;
                 send.click();
               }, 350);
             }
-          }, 350);
-        }, 300);
+          }, 450);
+
+        }, 250);
       };
     }
 
-    // Register service worker
+    // --- Splash / Intro ---
+    (function(){
+      const splash = document.getElementById("splash");
+      if(!splash) return;
+
+      const hide = () => splash.classList.add("hide");
+      splash.addEventListener("click", hide);
+
+      setTimeout(() => {
+        hide();
+        window.showView("dash");
+      }, 1500);
+    })();
+
+    // --- Service Worker ---
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker.register("./sw.js").catch(()=>{});
     }
