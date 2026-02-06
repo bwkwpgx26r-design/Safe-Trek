@@ -433,7 +433,44 @@ function renderChat(){
   window.requestAnimationFrame(()=>window.scrollTo(0,document.body.scrollHeight));
   renderQuickReplies();
 }
+function chatRouteCard(route, index){
+  const card = document.createElement("div");
+  card.className = "chat-card";
 
+  const title = document.createElement("div");
+  title.className = "chat-card__title";
+  title.textContent = `🌲 ${route.name}`;
+
+  const meta = document.createElement("div");
+  meta.className = "chat-card__meta";
+  meta.textContent = `~${route.lengthKm} km · Quelle: OpenStreetMap`;
+
+  const actions = document.createElement("div");
+  actions.className = "chat-card__actions";
+
+  const btnView = document.createElement("button");
+  btnView.className = "secondary";
+  btnView.textContent = "Route ansehen";
+  btnView.onclick = () => {
+    openRouteById(route.id);
+    showView("route");
+  };
+
+  const btnSelect = document.createElement("button");
+  btnSelect.textContent = "Diese Route wählen";
+  btnSelect.onclick = () => {
+    handleChatInput(String(index + 1));
+  };
+
+  actions.appendChild(btnView);
+  actions.appendChild(btnSelect);
+
+  card.appendChild(title);
+  card.appendChild(meta);
+  card.appendChild(actions);
+
+  return card;
+}
 function renderQuickReplies(){
   quickRepliesEl.innerHTML="";
   const s=state.chat.step;
