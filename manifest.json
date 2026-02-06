@@ -1,5 +1,5 @@
 {
-  "name": "SafeTrek Beta",
+  "name": "SafeTrek",
   "short_name": "SafeTrek",
   "start_url": "./index.html",
   "display": "standalone",
