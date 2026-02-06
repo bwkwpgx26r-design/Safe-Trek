@@ -1,0 +1,8 @@
+{
+  "name": "SafeTrek Beta",
+  "short_name": "SafeTrek",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#0b0b0c",
+  "theme_color": "#0b0b0c"
+}
