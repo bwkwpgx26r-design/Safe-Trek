@@ -1,0 +1,11 @@
+{
+  "name": "SafeTrek",
+  "short_name": "SafeTrek",
+  "start_url": "./?v=8",
+  "display": "standalone",
+  "background_color": "#0b0b0b",
+  "theme_color": "#0b0b0b",
+  "icons": [
+    { "src": "Logo.PNG", "sizes": "512x512", "type": "image/png" }
+  ]
+}
