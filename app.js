@@ -430,6 +430,19 @@ function renderChat(){
     row.appendChild(wrap);
     chatEl.appendChild(row);
   }
+    // ✅ Wenn wir gerade im "Route auswählen"-Step sind: Cards nach jedem Render wieder anzeigen
+  if (state.chat.step === "pick_route" && Array.isArray(state.chat.chatCandidates) && state.chat.chatCandidates.length) {
+    state.chat.chatCandidates.slice(0, 10).forEach((route, index) => {
+      const row = document.createElement("div");
+      row.className = "msg bot";
+
+      const wrap = document.createElement("div");
+      wrap.appendChild(chatRouteCard(route, index));
+
+      row.appendChild(wrap);
+      chatEl.appendChild(row);
+    });
+  }
   window.requestAnimationFrame(()=>window.scrollTo(0,document.body.scrollHeight));
   renderQuickReplies();
 }
