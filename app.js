@@ -954,7 +954,20 @@ btnFindRoutes.onclick = async () => {
 // Chat from dashboard (without route is now totally fine)
 btnOpenChatNoRoute.onclick = () => startChat();
 
-btnBackToDash.onclick = () => showView("dash");
+btnBackToDash.onclick = () => {
+  // ✅ Wenn wir aus dem Chat kommen (z.B. Routen-Cards / pick_route / after_route),
+  // dann zurück in den Chat statt ins Dashboard.
+  if (
+    state.chat &&
+    state.chat.step &&
+    state.chat.step !== "idle"
+  ) {
+    showView("chat");
+    renderChat();
+  } else {
+    showView("dash");
+  }
+};
 
 // Start chat from route detail
 btnStartChatWithRoute.onclick = () => startChat();
