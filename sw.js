@@ -1,13 +1,15 @@
 // SafeTrek Service Worker
-// Wichtig: Wenn du Änderungen pushst und iOS cached, VERSION erhöhen!
-const VERSION = "safetrekw-v15";
+// Wenn du neue Versionen pushst: VERSION hochzählen!
+const VERSION = "safetreks-beta16";
 const CORE = [
   "./",
   "./index.html",
   "./styles.css",
   "./app.js",
   "./manifest.json",
-  "./Logo.PNG"
+  "./Logo.PNG",
+  "./icon-192.png",
+  "./icon-512.png"
 ];
 
 self.addEventListener("install", (e) => {
@@ -24,18 +26,18 @@ self.addEventListener("activate", (e) => {
   );
 });
 
-// Network-first für API, Cache-first für static
 self.addEventListener("fetch", (e) => {
   const url = new URL(e.request.url);
 
-  // APIs immer network-first
   const isApi =
     url.hostname.includes("open-meteo.com") ||
     url.hostname.includes("nominatim.openstreetmap.org") ||
     url.hostname.includes("overpass-api.de") ||
     url.hostname.includes("overpass.kumi.systems") ||
-    url.hostname.includes("overpass.openstreetmap.ru");
+    url.hostname.includes("overpass.openstreetmap.ru") ||
+    url.hostname.includes("api.opentopodata.org");
 
+  // API: network-first
   if (isApi) {
     e.respondWith(
       fetch(e.request).then(res => {
@@ -47,7 +49,7 @@ self.addEventListener("fetch", (e) => {
     return;
   }
 
-  // static cache-first
+  // Static: cache-first
   e.respondWith(
     caches.match(e.request).then(hit => hit || fetch(e.request))
   );
