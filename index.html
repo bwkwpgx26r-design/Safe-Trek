@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0b0b0b">
+  <title>SafeTrek</title>
+
+  <link rel="manifest" href="./manifest.json">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+
+  <!-- Leaflet (Map Screen vorbereitet) -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <link rel="stylesheet" href="./styles.css">
+</head>
+
+<body>
+
+<!-- SPLASH -->
+<div id="splash">
+  <img src="./Logo.PNG" alt="SafeTrek">
+</div>
+
+<!-- APP -->
+<div id="app">
+
+<header class="topbar">
+  <span class="brand">SafeTrek</span>
+</header>
+
+<main>
+
+<!-- AUTH -->
+<section class="screen active" id="auth">
+  <div class="grid">
+    <button onclick="enterAsGuest()">🚶‍♂️</button>
+    <button onclick="noop()">👤</button>
+    <button onclick="noop()">✨</button>
+  </div>
+</section>
+
+<!-- DASHBOARD -->
+<section class="screen" id="home">
+  <div class="grid">
+    <button onclick="go('wizard')">🧭</button>
+    <button onclick="go('routes')">🥾</button>
+    <button onclick="go('map')">🗺️</button>
+    <button onclick="go('history')">⏱️</button>
+  </div>
+</section>
+
+<!-- WIZARD -->
+<section class="screen" id="wizard">
+  <div class="wizard">
+    <div class="wizard-step active" data-step="0">
+      <button onclick="selectWizard(0,1)">😣</button>
+      <button onclick="selectWizard(0,2)">😐</button>
+      <button onclick="selectWizard(0,3)">🙂</button>
+      <button onclick="selectWizard(0,4)">😄</button>
+    </div>
+
+    <div class="wizard-step" data-step="1">
+      <button onclick="selectWizard(1,1)">🪫</button>
+      <button onclick="selectWizard(1,2)">🔋</button>
+      <button onclick="selectWizard(1,3)">⚡</button>
+      <button onclick="selectWizard(1,4)">🏃‍♂️</button>
+    </div>
+
+    <div class="wizard-step" data-step="2">
+      <button onclick="selectWizard(2,1)">⏱️</button>
+      <button onclick="selectWizard(2,2)">⏱️⏱️</button>
+      <button onclick="selectWizard(2,3)">⏱️⏱️⏱️</button>
+      <button onclick="selectWizard(2,4)">🪑</button>
+    </div>
+
+    <div class="wizard-step" data-step="3">
+      <button onclick="selectWizard(3,1)">⚠️</button>
+      <button onclick="selectWizard(3,2)">🛡️</button>
+      <button onclick="selectWizard(3,3)">🧯</button>
+      <button onclick="selectWizard(3,4)">⛑️</button>
+    </div>
+  </div>
+</section>
+
+<!-- ROUTES -->
+<section class="screen" id="routes">
+  <div class="route-grid" id="routeGrid"></div>
+</section>
+
+<!-- MAP -->
+<section class="screen" id="map">
+  <div id="mapView"></div>
+
+  <div class="map-overlay">
+    <button onclick="selectPlan('A')">🅰️</button>
+    <button onclick="selectPlan('B')">🅱️</button>
+    <button onclick="selectPlan('C')">🅲</button>
+    <button class="danger" onclick="openSOS()">🆘</button>
+  </div>
+</section>
+
+<!-- HISTORY -->
+<section class="screen" id="history">
+  <div class="route-grid"></div>
+</section>
+
+</main>
+</div>
+
+<script src="./app.js"></script>
+</body>
+</html>
