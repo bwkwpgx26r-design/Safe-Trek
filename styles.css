@@ -141,3 +141,14 @@ html,body{ height:100%; margin:0; font-family: ui-sans-serif, system-ui, -apple-
   color: var(--muted);
   line-height:1.35;
 }
+.mapBox{
+  height: 260px;
+  border-radius: 16px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  margin-top: 10px;
+}
+.smallmuted{
+  font-size: 12px;
+  color: var(--muted);
+}
