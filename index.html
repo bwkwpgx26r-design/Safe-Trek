@@ -4,15 +4,12 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
   <meta name="theme-color" content="#0b0b0c" />
-  <meta name="description" content="SafeTrek Beta – Adaptive Outdoor Planning für reales Leben." />
-  <title>SafeTrek Beta</title>
-
-  <link rel="manifest" href="manifest.json" />
-  <link rel="stylesheet" href="styles.css" />
-
-  <!-- iOS Homescreen -->
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+
+  <title>SafeTrek</title>
+  <link rel="manifest" href="manifest.json" />
+  <link rel="stylesheet" href="styles.css" />
 
   <!-- Leaflet -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
@@ -28,23 +25,114 @@
         <div class="apptag">Beta • Adaptive Outdoor Planning</div>
       </div>
     </div>
-    <button id="resetBtn" class="ghost" title="Alles zurücksetzen">Reset</button>
+    <button id="resetBtn" class="ghost">Reset</button>
   </header>
 
-  <main class="chat" id="chat"></main>
-
-  <footer class="composer">
-    <div id="quickReplies" class="quick"></div>
-
-    <form id="form" class="form">
-      <input id="input" class="input" placeholder="Antwort eingeben…" autocomplete="off" />
-      <button class="send" type="submit">Senden</button>
-    </form>
-
-    <div class="fineprint">
-      Hinweis: Kein Notruf. Kein Ersatz für alpine Beratung/Bergrettung. Bei Gefahr: lokale Rettungsdienste kontaktieren.
+  <!-- SPLASH -->
+  <section id="view-splash" class="view view--active">
+    <div class="splash">
+      <img id="splashLogo" class="splash__logo" src="logo.png" alt="SafeTrek Logo" />
+      <div class="splash__title">SafeTrek</div>
+      <div class="splash__subtitle">Outdoor, das sich an Menschen anpasst.</div>
     </div>
-  </footer>
+  </section>
+
+  <!-- HOME -->
+  <section id="view-home" class="view">
+    <div class="screen">
+      <h2>Willkommen</h2>
+      <p class="muted">Wähle, wie du starten möchtest.</p>
+
+      <div class="grid">
+        <button class="primary" id="btnLogin">Anmelden</button>
+        <button class="primary" id="btnRegister">Registrieren</button>
+        <button class="ghost big" id="btnGuest">Als Gast fortfahren</button>
+      </div>
+
+      <div class="note">
+        <b>Hinweis:</b> Login/Registrierung sind in dieser Beta noch Platzhalter (ohne Server).
+      </div>
+    </div>
+  </section>
+
+  <!-- DASHBOARD -->
+  <section id="view-dashboard" class="view">
+    <div class="screen">
+      <h2>Dashboard</h2>
+      <p class="muted">Wähle eine Region und eine Route – oder starte direkt den SafeTrek-Chat.</p>
+
+      <div class="card">
+        <div class="row">
+          <div>
+            <div class="label">Region</div>
+            <select id="regionSelect" class="select">
+              <option>München</option>
+              <option>Garmisch</option>
+              <option>Salzburg</option>
+              <option>Innsbruck</option>
+            </select>
+          </div>
+          <div>
+            <div class="label">Radius</div>
+            <select id="radiusSelect" class="select">
+              <option value="10">10 km</option>
+              <option value="15" selected>15 km</option>
+              <option value="25">25 km</option>
+            </select>
+          </div>
+        </div>
+
+        <button class="primary full" id="btnFindRoutes">Routen laden</button>
+        <div id="routeStatus" class="muted small"></div>
+      </div>
+
+      <div id="routeList" class="list"></div>
+
+      <div class="card">
+        <button class="ghost full" id="btnOpenChatNoRoute">Chat starten (ohne Route)</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ROUTE DETAIL -->
+  <section id="view-route" class="view">
+    <div class="screen">
+      <button class="ghost" id="btnBackToDash">← Zurück</button>
+
+      <div class="card">
+        <h3 id="routeTitle">Route</h3>
+        <div id="routeMeta" class="muted small"></div>
+        <div id="weatherLine" class="muted small"></div>
+        <div class="mapBox" id="map"></div>
+      </div>
+
+      <div class="card">
+        <h3>Assisted Exit (echt)</h3>
+        <p class="muted small">Kein Notruf. Reale Optionen in Routennähe (Bus/Bahn/Parkplatz/Seilbahn).</p>
+        <div id="exitList" class="list"></div>
+      </div>
+
+      <div class="card">
+        <button class="primary full" id="btnStartChatWithRoute">SafeTrek-Chat starten</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- CHAT -->
+  <section id="view-chat" class="view">
+    <main class="chat" id="chat"></main>
+
+    <footer class="composer">
+      <div id="quickReplies" class="quick"></div>
+      <form id="form" class="form">
+        <input id="input" class="input" placeholder="Antwort eingeben…" autocomplete="off" />
+        <button class="send" type="submit">Senden</button>
+      </form>
+      <div class="fineprint">
+        Hinweis: Kein Notruf. Kein Ersatz für alpine Beratung/Bergrettung. Bei Gefahr: lokale Rettungsdienste kontaktieren.
+      </div>
+    </footer>
+  </section>
 
   <script src="app.js"></script>
 </body>
