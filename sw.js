@@ -1,52 +1,54 @@
-const CACHE_NAME = "safetreks-cache-v1";
-const ASSETS = [
+// SafeTrek Service Worker
+// Wichtig: Wenn du Änderungen pushst und iOS cached, VERSION erhöhen!
+const VERSION = "safetrekw-v15";
+const CORE = [
   "./",
   "./index.html",
   "./styles.css",
   "./app.js",
   "./manifest.json",
-  "./icon-192.png",
-  "./icon-512.png"
+  "./Logo.PNG"
 ];
 
-self.addEventListener("install", (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME).then(cache => cache.addAll(ASSETS)).then(() => self.skipWaiting())
+self.addEventListener("install", (e) => {
+  e.waitUntil(
+    caches.open(VERSION).then((c) => c.addAll(CORE)).then(() => self.skipWaiting())
   );
 });
 
-self.addEventListener("activate", (event) => {
-  event.waitUntil(
+self.addEventListener("activate", (e) => {
+  e.waitUntil(
     caches.keys().then(keys =>
-      Promise.all(keys.map(k => (k === CACHE_NAME ? null : caches.delete(k))))
+      Promise.all(keys.map(k => (k !== VERSION ? caches.delete(k) : Promise.resolve())))
     ).then(() => self.clients.claim())
   );
 });
 
-// Network-first for HTML, cache-first for others (safer for updates)
-self.addEventListener("fetch", (event) => {
-  const req = event.request;
-  const url = new URL(req.url);
+// Network-first für API, Cache-first für static
+self.addEventListener("fetch", (e) => {
+  const url = new URL(e.request.url);
 
-  // only handle same-origin
-  if (url.origin !== location.origin) return;
+  // APIs immer network-first
+  const isApi =
+    url.hostname.includes("open-meteo.com") ||
+    url.hostname.includes("nominatim.openstreetmap.org") ||
+    url.hostname.includes("overpass-api.de") ||
+    url.hostname.includes("overpass.kumi.systems") ||
+    url.hostname.includes("overpass.openstreetmap.ru");
 
-  if (req.mode === "navigate" || url.pathname.endsWith(".html")) {
-    event.respondWith(
-      fetch(req).then(res => {
+  if (isApi) {
+    e.respondWith(
+      fetch(e.request).then(res => {
         const copy = res.clone();
-        caches.open(CACHE_NAME).then(cache => cache.put(req, copy));
+        caches.open(VERSION).then(c => c.put(e.request, copy)).catch(()=>{});
         return res;
-      }).catch(() => caches.match(req).then(r => r || caches.match("./index.html")))
+      }).catch(() => caches.match(e.request))
     );
     return;
   }
 
-  event.respondWith(
-    caches.match(req).then(cached => cached || fetch(req).then(res => {
-      const copy = res.clone();
-      caches.open(CACHE_NAME).then(cache => cache.put(req, copy));
-      return res;
-    }))
+  // static cache-first
+  e.respondWith(
+    caches.match(e.request).then(hit => hit || fetch(e.request))
   );
 });
