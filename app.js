@@ -1,5 +1,6 @@
 // SafeTrek Beta – Web-App (no build).
-// Erweiterung: echte Hiking-Routen via OpenStreetMap (Overpass) + Karte (Leaflet)
+// Chat-Flow + echte Hiking-Routen via OSM/Overpass + Karte (Leaflet) + Wetter via Open-Meteo.
+// Kein Notruf. Kein Ersatz für alpine Beratung/Bergrettung.
 
 const chatEl = document.getElementById("chat");
 const form = document.getElementById("form");
@@ -7,46 +8,29 @@ const input = document.getElementById("input");
 const quickRepliesEl = document.getElementById("quickReplies");
 const resetBtn = document.getElementById("resetBtn");
 
-const STORAGE_KEY = "safetrek_beta_state_v2";
+const STORAGE_KEY = "safetrek_beta_state_v3";
 
+// ---------- Service Worker ----------
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("./sw.js").catch(() => {});
 }
 
+// ---------- State ----------
 const defaultState = {
   step: "start",
   profile: { stamina: null, breakNeed: null, safety: null },
   daily: { energyToday: null, painToday: null, anxietyToday: null },
+
+  routeSearch: null, // { placeName, radiusKm, results: [{id,name,network}] }
+  route: null,       // { id, name, network, coords, distanceKm, weather }
+
   lastPlans: null,
-
-  // NEU: Route
-  route: null,            // { id, name, network, coords: [[lat,lng], ...], distanceKm }
-  routeSearch: null,      // { placeKey, radiusM, results: [{id,name,network}] }
-
   history: []
 };
 
 let state = loadState();
 
 // ---------- Helpers ----------
-async function fetchWeather(lat, lon){
-  // Open-Meteo – kein API-Key nötig
-  const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,precipitation,wind_speed_10m&hourly=precipitation_probability&forecast_days=1`;
-  const resp = await fetch(url);
-  if (!resp.ok) throw new Error("Weather API Fehler");
-  const data = await resp.json();
-
-  const tempC = data?.current?.temperature_2m ?? null;
-  const windKmh = data?.current?.wind_speed_10m ?? null;
-
-  let rainChance = null;
-  const probs = data?.hourly?.precipitation_probability;
-  if (Array.isArray(probs) && probs.length){
-    rainChance = Math.max(...probs.slice(0, 12));
-  }
-
-  return { tempC, windKmh, rainChance };
-}
 function nowLabel(){
   const d = new Date();
   return d.toLocaleTimeString([], {hour:"2-digit", minute:"2-digit"});
@@ -78,24 +62,151 @@ function toInt1to5(v){
 function clamp(n,a,b){ return Math.max(a, Math.min(b,n)); }
 function round(n,d=0){ const p = 10**d; return Math.round(n*p)/p; }
 
-// ---------- Map (Leaflet) ----------
-let leafletMap = null;
-let leafletLine = null;
+// ---------- Weather (Open-Meteo) ----------
+async function fetchWeather(lat, lon){
+  // Kein API-Key nötig
+  const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,precipitation,wind_speed_10m&hourly=precipitation_probability&forecast_days=1`;
+  const resp = await fetch(url);
+  if (!resp.ok) throw new Error("Weather API Fehler");
+  const data = await resp.json();
+
+  const tempC = data?.current?.temperature_2m ?? null;
+  const windKmh = data?.current?.wind_speed_10m ?? null;
+
+  let rainChance = null;
+  const probs = data?.hourly?.precipitation_probability;
+  if (Array.isArray(probs) && probs.length){
+    rainChance = Math.max(...probs.slice(0, 12));
+  }
+  return { tempC, windKmh, rainChance };
+}
+
+// ---------- Places (München & Österreich) ----------
+const PLACES = {
+  "München": { lat: 48.137154, lon: 11.576124 },
+  "Garmisch": { lat: 47.4921, lon: 11.0958 },
+  "Salzburg": { lat: 47.80949, lon: 13.05501 },
+  "Innsbruck": { lat: 47.2682, lon: 11.3923 }
+};
+
+// ---------- Overpass (OSM Routen) ----------
+async function overpass(query){
+  const url = "https://overpass-api.de/api/interpreter";
+  const resp = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
+    body: "data=" + encodeURIComponent(query)
+  });
+  if (!resp.ok) throw new Error("Overpass Fehler: " + resp.status);
+  return await resp.json();
+}
+
+async function searchHikingRoutes(placeName, radiusKm=15){
+  const place = PLACES[placeName];
+  if (!place) throw new Error("Unbekannter Ort");
+  const radiusM = Math.round(radiusKm * 1000);
+
+  // Relations mit route=hiking im Umkreis; nur Tags; Limit 30, danach dedupe + Top 10
+  const q = `
+    [out:json][timeout:25];
+    (
+      rel(around:${radiusM},${place.lat},${place.lon})["route"="hiking"];
+    );
+    out tags 30;
+  `;
+  const data = await overpass(q);
+  const rels = (data.elements || []).filter(e => e.type === "relation");
+
+  const cleaned = rels.map(r => ({
+    id: r.id,
+    name: r.tags?.name || "Unbenannte Route",
+    network: r.tags?.network || r.tags?.osmc_symbol || ""
+  }));
+
+  const seen = new Set();
+  const unique = [];
+  for (const r of cleaned){
+    const k = (r.name + "|" + r.network).toLowerCase();
+    if (seen.has(k)) continue;
+    seen.add(k);
+    unique.push(r);
+  }
+
+  return unique.slice(0, 10);
+}
+
+async function loadRouteGeometry(relationId){
+  // Relation + Member-Ways mit Geometrie
+  const q = `
+    [out:json][timeout:45];
+    rel(${relationId});
+    (._;>;);
+    out geom;
+  `;
+  const data = await overpass(q);
+
+  const ways = (data.elements || []).filter(e => e.type === "way" && Array.isArray(e.geometry));
+  const coords = [];
+  for (const w of ways){
+    for (const g of w.geometry){
+      coords.push([g.lat, g.lon]);
+    }
+  }
+  if (coords.length < 2) throw new Error("Keine Geometrie gefunden.");
+
+  const rel = (data.elements || []).find(e => e.type === "relation" && e.id === relationId);
+  const name = rel?.tags?.name || "Route";
+  const network = rel?.tags?.network || "";
+
+  const distanceKm = round(kmFromCoords(coords), 1);
+  return { id: relationId, name, network, coords, distanceKm };
+}
+
+function kmFromCoords(coords){
+  let km = 0;
+  for (let i=1; i<coords.length; i++){
+    const [lat1, lon1] = coords[i-1];
+    const [lat2, lon2] = coords[i];
+    km += haversineKm(lat1, lon1, lat2, lon2);
+  }
+  return km;
+}
+function haversineKm(lat1, lon1, lat2, lon2){
+  const R = 6371;
+  const dLat = (lat2-lat1) * Math.PI/180;
+  const dLon = (lon2-lon1) * Math.PI/180;
+  const a =
+    Math.sin(dLat/2)**2 +
+    Math.cos(lat1*Math.PI/180) * Math.cos(lat2*Math.PI/180) * Math.sin(dLon/2)**2;
+  return 2*R*Math.asin(Math.sqrt(a));
+}
+
+// ---------- Leaflet Map ----------
+let map = null;
+let poly = null;
 
 function ensureMap(containerId){
   const el = document.getElementById(containerId);
   if (!el || !window.L) return;
 
-  if (!leafletMap){
-    leafletMap = L.map(containerId, { zoomControl: true });
+  if (!map){
+    map = L.map(containerId, { zoomControl: true });
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
       maxZoom: 18,
       attribution: "© OpenStreetMap"
-    }).addTo(leafletMap);
+    }).addTo(map);
   } else {
-    // wenn Leaflet schon initialisiert ist, muss Container evtl. neu vermessen werden
-    setTimeout(() => leafletMap.invalidateSize(), 50);
+    setTimeout(() => map.invalidateSize(), 50);
   }
+}
+
+function drawRoute(route){
+  ensureMap("map");
+  if (!map || !route?.coords?.length) return;
+
+  if (poly) poly.remove();
+  poly = L.polyline(route.coords, { weight: 4 }).addTo(map);
+  map.fitBounds(poly.getBounds(), { padding: [20, 20] });
 }
 
 // ---------- Decision Engine ----------
@@ -118,19 +229,25 @@ function generatePlans({ profile, daily, routeBase }) {
     buildPlan("Plan C", routeBase, readiness, safetyBuffer * breakFactor * 0.95, 1.00),
   ];
 
+  // Wetter-Hinweis (wenn vorhanden)
+  let weatherNote = "";
+  const w = state.route?.weather;
+  if (w && (w.rainChance >= 60 || w.windKmh >= 30)){
+    weatherNote = " Wetter wirkt heute anspruchsvoll (Regen/Wind). Eher konservativ planen.";
+  }
+
   const guidance =
     readiness <= 2
-      ? "Heute konservativ planen. Plan A empfohlen. Wenn Unsicherheit entsteht: früh umdrehen."
+      ? "Heute konservativ planen. Plan A empfohlen. Wenn Unsicherheit entsteht: früh umdrehen." + weatherNote
       : readiness <= 3
-      ? "Plan A oder B sind realistisch. Plane Pausen bewusst ein."
-      : "Plan B ist gut machbar. Plan C nur, wenn du dich unterwegs stabil fühlst.";
+      ? "Plan A oder B sind realistisch. Plane Pausen bewusst ein." + weatherNote
+      : "Plan B ist gut machbar. Plan C nur, wenn du dich unterwegs stabil fühlst." + weatherNote;
 
   return { plans, readiness, guidance };
 }
 
 function buildPlan(label, base, readiness, timeMultiplier, intensityMultiplier) {
   const adjDistance = round(base.distanceKm * intensityMultiplier, 1);
-  const adjHm = Math.round((base.elevationM || 0) * intensityMultiplier);
 
   const readinessPenalty = readiness <= 2 ? 1.25 : readiness === 3 ? 1.1 : 1.0;
   const durationMin = Math.round(base.durationMin * timeMultiplier * readinessPenalty);
@@ -146,7 +263,6 @@ function buildPlan(label, base, readiness, timeMultiplier, intensityMultiplier) 
   return {
     label,
     distanceKm: adjDistance,
-    elevationM: adjHm,
     durationMin,
     turnBackPct,
     abortPoints,
@@ -154,11 +270,12 @@ function buildPlan(label, base, readiness, timeMultiplier, intensityMultiplier) 
   };
 }
 
+// ---------- Packlist ----------
 function generatePacklist({ profile, daily, weather }) {
   const items = [];
   add(items, "Wasser", "Stabilisiert Energie & reduziert Stress bei Pausen.");
-  if (weather.rainChance >= 40) add(items, "Regenjacke", "Regen erhöht Kälte- und Erschöpfungsdruck.");
-  if (weather.windKmh >= 25) add(items, "Zusätzliche Wärmeschicht", "Wind verstärkt Auskühlung.");
+  if ((weather?.rainChance ?? 0) >= 40) add(items, "Regenjacke", "Regen erhöht Kälte- und Erschöpfungsdruck.");
+  if ((weather?.windKmh ?? 0) >= 25) add(items, "Zusätzliche Wärmeschicht", "Wind verstärkt Auskühlung.");
   if (profile.breakNeed >= 4) add(items, "Sitzunterlage", "Pausen werden leichter und planbarer.");
   if (daily.painToday >= 4) add(items, "Support-Item (z.B. Bandage)", "Hilft, Abbruch nicht zur Krise werden zu lassen.");
   if (daily.anxietyToday >= 4) add(items, "Beruhigungsanker", "Reduziert mentale Überforderung unterwegs.");
@@ -167,119 +284,14 @@ function generatePacklist({ profile, daily, weather }) {
 }
 function add(list, name, why){ list.push({name, why}); }
 
-// ---------- Overpass: echte Hiking-Routen ----------
-const PLACES = {
-  "München": { key: "munich", lat: 48.137154, lon: 11.576124 },
-  "Salzburg": { key: "salzburg", lat: 47.80949, lon: 13.05501 },
-  "Innsbruck": { key: "innsbruck", lat: 47.2682, lon: 11.3923 },
-  "Garmisch": { key: "garmisch", lat: 47.4921, lon: 11.0958 }
-};
-
-async function overpass(query){
-  // robust gegen CORS/last
-  const url = "https://overpass-api.de/api/interpreter";
-  const resp = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
-    body: "data=" + encodeURIComponent(query)
-  });
-  if (!resp.ok) throw new Error("Overpass Fehler: " + resp.status);
-  return await resp.json();
-}
-
-function kmFromCoords(coords){
-  // Haversine über Segmente
-  let km = 0;
-  for (let i=1; i<coords.length; i++){
-    const [lat1, lon1] = coords[i-1];
-    const [lat2, lon2] = coords[i];
-    km += haversineKm(lat1, lon1, lat2, lon2);
-  }
-  return km;
-}
-function haversineKm(lat1, lon1, lat2, lon2){
-  const R = 6371;
-  const dLat = (lat2-lat1) * Math.PI/180;
-  const dLon = (lon2-lon1) * Math.PI/180;
-  const a =
-    Math.sin(dLat/2)**2 +
-    Math.cos(lat1*Math.PI/180) * Math.cos(lat2*Math.PI/180) * Math.sin(dLon/2)**2;
-  return 2*R*Math.asin(Math.sqrt(a));
-}
-
-async function searchHikingRoutes(placeName, radiusKm=15){
-  const place = PLACES[placeName];
-  if (!place) throw new Error("Unbekannter Ort");
-  const radiusM = Math.round(radiusKm * 1000);
-
-  // Nur Relations mit route=hiking in Umkreis, nur Tags ausgeben (schnell)
-  const q = `
-    [out:json][timeout:25];
-    (
-      rel(around:${radiusM},${place.lat},${place.lon})["route"="hiking"];
-    );
-    out tags 30;
-  `;
-  const data = await overpass(q);
-  const rels = (data.elements || []).filter(e => e.type === "relation");
-
-  // Aufräumen + Top-Liste
-  const cleaned = rels.map(r => ({
-    id: r.id,
-    name: r.tags?.name || "Unbenannte Route",
-    network: r.tags?.network || r.tags?.osmc_symbol || ""
-  }));
-
-  // Duplikate grob entfernen
-  const seen = new Set();
-  const unique = [];
-  for (const r of cleaned){
-    const k = (r.name + "|" + r.network).toLowerCase();
-    if (seen.has(k)) continue;
-    seen.add(k);
-    unique.push(r);
-  }
-
-  return { placeKey: place.key, radiusM, results: unique.slice(0, 10) };
-}
-
-async function loadRouteGeometry(relationId){
-  // Relation + Member-Ways mit Geometrie laden
-  const q = `
-    [out:json][timeout:45];
-    rel(${relationId});
-    (._;>;);
-    out geom;
-  `;
-  const data = await overpass(q);
-
-  // Wege sammeln und Koordinaten zusammensetzen (einfach: alle Way-Geometrien hintereinander)
-  const ways = (data.elements || []).filter(e => e.type === "way" && Array.isArray(e.geometry));
-  const coords = [];
-  for (const w of ways){
-    for (const g of w.geometry){
-      coords.push([g.lat, g.lon]);
-    }
-  }
-  if (coords.length < 2) throw new Error("Keine Geometrie gefunden (Route evtl. sehr groß/komplex).");
-
-  const dist = kmFromCoords(coords);
-
-  // Name der Relation aus data holen
-  const rel = (data.elements || []).find(e => e.type === "relation" && e.id === relationId);
-  const name = rel?.tags?.name || "Route";
-  const network = rel?.tags?.network || "";
-
-  return { id: relationId, name, network, coords, distanceKm: round(dist, 1) };
-}
-
-// ---------- UI / Cards ----------
+// ---------- UI Rendering ----------
 function render(){
   chatEl.innerHTML = "";
 
   for (const m of state.history){
     const row = document.createElement("div");
     row.className = `msg ${m.role}`;
+
     const meta = document.createElement("div");
     meta.className = "meta";
     meta.textContent = m.role === "bot" ? `SafeTrek • ${m.t}` : `Du • ${m.t}`;
@@ -291,39 +303,35 @@ function render(){
     const wrap = document.createElement("div");
     wrap.appendChild(meta);
     wrap.appendChild(bubble);
+
     row.appendChild(wrap);
     chatEl.appendChild(row);
 
-    if (m.role === "bot" && m.text.startsWith("[CARDS:ROUTE_LIST]") && state.routeSearch){
+    if (m.role === "bot" && m.text === "[CARDS:ROUTE_LIST]" && state.routeSearch){
       chatEl.appendChild(routeListCard(state.routeSearch));
     }
-    if (m.role === "bot" && m.text.startsWith("[CARDS:ROUTE_MAP]") && state.route){
+    if (m.role === "bot" && m.text === "[CARDS:ROUTE_MAP]" && state.route){
       chatEl.appendChild(routeMapCard(state.route));
-      // map initialisieren sobald DOM da ist
-      setTimeout(() => drawRouteOnMap(state.route), 80);
+      setTimeout(() => drawRoute(state.route), 80);
     }
-    if (m.role === "bot" && m.text.startsWith("[CARDS:PLANS]") && state.lastPlans){
+    if (m.role === "bot" && m.text === "[CARDS:PLANS]" && state.lastPlans){
       chatEl.appendChild(plansCards(state.lastPlans));
     }
-    if (m.role === "bot" && m.text.startsWith("[CARDS:PACKLIST]")){
+    if (m.role === "bot" && m.text === "[CARDS:PACKLIST]"){
       chatEl.appendChild(packlistCards());
     }
-    if (m.role === "bot" && m.text.startsWith("[CARDS:EXIT]")){
+    if (m.role === "bot" && m.text === "[CARDS:EXIT]"){
       chatEl.appendChild(exitCards());
     }
   }
 
-  window.requestAnimationFrame(() => {
-    window.scrollTo(0, document.body.scrollHeight);
-  });
-
+  window.requestAnimationFrame(() => window.scrollTo(0, document.body.scrollHeight));
   renderQuickReplies();
 }
 
 function renderQuickReplies(){
   quickRepliesEl.innerHTML = "";
-  const options = quickReplyOptions();
-  for (const opt of options){
+  for (const opt of quickReplyOptions()){
     const b = document.createElement("button");
     b.className = "qbtn";
     b.type = "button";
@@ -342,26 +350,26 @@ function quickReplyOptions(){
   if (s === "ask_pain") return ["1","2","3","4","5"];
   if (s === "ask_anxiety") return ["1","2","3","4","5"];
 
-  if (s === "route_place") return ["München", "Garmisch", "Salzburg", "Innsbruck"];
+  if (s === "route_place") return Object.keys(PLACES);
   if (s === "route_radius") return ["10", "15", "25"];
-
   if (s === "route_pick" && state.routeSearch){
-    // zeige 1..N als Buttons
-    return state.routeSearch.results.map((_, i) => String(i+1)).slice(0, 10).concat(["Zurück"]);
+    return state.routeSearch.results.map((_, i) => String(i+1)).concat(["Zurück"]);
   }
 
   if (s === "after_plans") return ["Route wählen", "Packliste", "Assisted Exit", "Neue Tagesform", "Profil ändern"];
   if (s === "after_packlist") return ["Zurück zu Plänen", "Assisted Exit", "Route wählen", "Neue Tagesform"];
   if (s === "after_exit") return ["Zurück zu Plänen", "Packliste", "Route wählen", "Neue Tagesform"];
+
   return [];
 }
 
-// ----- Cards -----
+// ---------- Cards ----------
 function routeListCard(search){
   const wrap = document.createElement("div");
   wrap.className = "card";
+
   const h = document.createElement("h3");
-  h.textContent = "Routen in der Nähe (OSM)";
+  h.textContent = `Routen in der Nähe (${search.placeName}, ${search.radiusKm} km)`;
   wrap.appendChild(h);
 
   const p = document.createElement("p");
@@ -390,33 +398,33 @@ function routeMapCard(route){
   p.textContent = `Distanz (berechnet): ~${route.distanceKm} km • Quelle: OpenStreetMap`;
   wrap.appendChild(p);
 
-  const map = document.createElement("div");
-  map.className = "mapBox";
-  map.id = "map";
-  wrap.appendChild(map);
+  if (route.weather){
+    const w = route.weather;
+    const weatherLine = document.createElement("p");
+    weatherLine.className = "smallmuted";
+    weatherLine.textContent =
+      `Wetter aktuell: ${w.tempC ?? "?"}°C • Wind ${w.windKmh ?? "?"} km/h • Regenrisiko ~${w.rainChance ?? "?"}%`;
+    wrap.appendChild(weatherLine);
+  } else {
+    const weatherLine = document.createElement("p");
+    weatherLine.className = "smallmuted";
+    weatherLine.textContent = "Wetter: (konnte gerade nicht geladen werden)";
+    wrap.appendChild(weatherLine);
+  }
+
+  const mapBox = document.createElement("div");
+  mapBox.className = "mapBox";
+  mapBox.id = "map";
+  wrap.appendChild(mapBox);
 
   const hint = document.createElement("p");
   hint.className = "smallmuted";
-  hint.textContent = "Hinweis: Für Beta werden Höhenmeter/Schwierigkeit später ergänzt.";
+  hint.textContent = "Hinweis: Höhenmeter/Schwierigkeit werden in der nächsten Ausbaustufe ergänzt.";
   wrap.appendChild(hint);
 
   return wrap;
 }
 
-function drawRouteOnMap(route){
-  ensureMap("map");
-  if (!leafletMap || !route?.coords?.length) return;
-
-  if (leafletLine){
-    leafletLine.remove();
-    leafletLine = null;
-  }
-
-  leafletLine = L.polyline(route.coords, { weight: 4 }).addTo(leafletMap);
-  leafletMap.fitBounds(leafletLine.getBounds(), { padding: [20, 20] });
-}
-
-// ----- Existing cards -----
 function plansCards(result){
   const wrap = document.createElement("div");
   wrap.className = "card";
@@ -430,20 +438,21 @@ function plansCards(result){
   wrap.appendChild(p);
 
   if (state.route){
-    const rr = document.createElement("p");
-    rr.className = "smallmuted";
-    rr.textContent = `Aktive Route: ${state.route.name} (~${state.route.distanceKm} km)`;
-    wrap.appendChild(rr);
+    const r = document.createElement("p");
+    r.className = "smallmuted";
+    r.textContent = `Aktive Route: ${state.route.name} (~${state.route.distanceKm} km)`;
+    wrap.appendChild(r);
   } else {
-    const rr = document.createElement("p");
-    rr.className = "smallmuted";
-    rr.textContent = `Tipp: Wähle eine Route, damit Plan A/B/C realistischer wird.`;
-    wrap.appendChild(rr);
+    const r = document.createElement("p");
+    r.className = "smallmuted";
+    r.textContent = "Tipp: Wähle eine Route, damit Plan A/B/C realistischer wird.";
+    wrap.appendChild(r);
   }
 
   for (const plan of result.plans){
     const box = document.createElement("div");
     box.className = "card";
+
     const hh = document.createElement("h3");
     hh.textContent = plan.label;
     box.appendChild(hh);
@@ -473,6 +482,7 @@ function plansCards(result){
 
     wrap.appendChild(box);
   }
+
   return wrap;
 }
 
@@ -484,28 +494,27 @@ function packlistCards(){
   h.textContent = "Packliste (begründet)";
   wrap.appendChild(h);
 
-  const items = generatePacklist({
-    profile: state.profile,
-    daily: state.daily,
-    weather: { tempC: 12, rainChance: 45, windKmh: 18 }
-  });
+  const w = state.route?.weather ?? { tempC: null, windKmh: null, rainChance: null };
+  const items = generatePacklist({ profile: state.profile, daily: state.daily, weather: w });
 
   for (const it of items){
     const box = document.createElement("div");
     box.className = "card";
     const t = document.createElement("h3");
     t.textContent = it.name;
-    const w = document.createElement("p");
-    w.textContent = it.why;
-    box.appendChild(t); box.appendChild(w);
+    const why = document.createElement("p");
+    why.textContent = it.why;
+    box.appendChild(t); box.appendChild(why);
     wrap.appendChild(box);
   }
+
   return wrap;
 }
 
 function exitCards(){
   const wrap = document.createElement("div");
   wrap.className = "card";
+
   const h = document.createElement("h3");
   h.textContent = "Assisted Exit (geplanter Rückzug)";
   wrap.appendChild(h);
@@ -530,14 +539,15 @@ function exitCards(){
     box.appendChild(t); box.appendChild(d);
     wrap.appendChild(box);
   }
+
   return wrap;
 }
 
-// ---------- Conversation Flow ----------
+// ---------- Flow ----------
 function startIfEmpty(){
   if (state.history.length === 0){
     pushMsg("bot", "Hi, ich bin SafeTrek (Beta). Ich helfe dir, heute eine sichere und machbare Entscheidung für draußen zu treffen — ohne Leistungsdruck.");
-    pushMsg("bot", "Vorab: Das ist kein Notruf und kein Ersatz für alpine Beratung. Wenn Gefahr besteht: bitte lokale Rettungsdienste kontaktieren.");
+    pushMsg("bot", "Vorab: Das ist kein Notruf und kein Ersatz für alpine Beratung. Bei Gefahr: lokale Rettungsdienste kontaktieren.");
     state.step = "ask_stamina";
     saveState();
     pushMsg("bot", "Zum Profil: Wie ist deine grundsätzliche Belastbarkeit? (1–5)");
@@ -552,6 +562,7 @@ async function handleUserInput(text){
 
   pushMsg("user", raw);
 
+  // Profil
   if (state.step === "ask_stamina"){
     const n = toInt1to5(raw);
     if (!n) return pushMsg("bot", "Bitte antworte mit 1–5. Wie ist deine Belastbarkeit?");
@@ -580,6 +591,7 @@ async function handleUserInput(text){
     return pushMsg("bot", "Wie ist deine Energie heute? (1–5)");
   }
 
+  // Tagesform
   if (state.step === "ask_energy"){
     const n = toInt1to5(raw);
     if (!n) return pushMsg("bot", "Bitte 1–5. Wie ist deine Energie heute?");
@@ -603,9 +615,8 @@ async function handleUserInput(text){
     if (!n) return pushMsg("bot", "Bitte 1–5. Wie hoch ist heute mentale Überforderung?");
     state.daily.anxietyToday = n;
 
-    // RouteBase: wenn Route gewählt wurde, nehmen wir Distanz aus echter Route
     const baseDistance = state.route?.distanceKm ?? 7.5;
-    const routeBase = { distanceKm: baseDistance, elevationM: 0, durationMin: Math.round(baseDistance * 22) }; // grob: 22 min/km inkl. Puffer
+    const routeBase = { distanceKm: baseDistance, durationMin: Math.round(baseDistance * 22) };
     const result = generatePlans({ profile: state.profile, daily: state.daily, routeBase });
 
     state.lastPlans = result;
@@ -616,66 +627,85 @@ async function handleUserInput(text){
     return pushMsg("bot", "Was möchtest du als Nächstes? Route wählen, Packliste oder Assisted Exit?");
   }
 
-  // Route flow
+  // Route: Ort
   if (state.step === "route_place"){
     if (!PLACES[raw]) return pushMsg("bot", "Bitte wähle: München, Garmisch, Salzburg oder Innsbruck.");
-    state.routeSearch = { placeKey: raw, radiusM: 15000, results: [] };
+    state.routeSearch = { placeName: raw, radiusKm: 15, results: [] };
     state.step = "route_radius";
     saveState();
-    return pushMsg("bot", "Radius in km? (z.B. 10 / 15 / 25)");
+    return pushMsg("bot", "Radius in km? (10 / 15 / 25)");
   }
 
+  // Route: Radius
   if (state.step === "route_radius"){
     const km = Number(raw);
     if (![10,15,25].includes(km)) return pushMsg("bot", "Bitte 10, 15 oder 25 auswählen.");
-    pushMsg("bot", "Suche Routen… (das kann 5–15 Sekunden dauern)");
+    state.routeSearch.radiusKm = km;
+    saveState();
+
+    pushMsg("bot", "Suche Routen… (5–15 Sekunden)");
     try{
-      const res = await searchHikingRoutes(state.routeSearch.placeKey, km);
-      state.routeSearch = { placeKey: state.routeSearch.placeKey, radiusM: res.radiusM, results: res.results };
+      const results = await searchHikingRoutes(state.routeSearch.placeName, km);
+      state.routeSearch.results = results;
       state.step = "route_pick";
       saveState();
+
       pushMsg("bot", "[CARDS:ROUTE_LIST]");
-      return pushMsg("bot", "Tippe die Nummer der Route (1–10).");
+      return pushMsg("bot", "Tippe die Nummer der Route (1–10) oder „Zurück“.");
     }catch(e){
       state.step = "after_plans";
       saveState();
-      return pushMsg("bot", "Route-Suche ist gerade schwierig (Overpass ist manchmal langsam). Versuch es gleich nochmal oder wähle einen kleineren Radius.");
+      return pushMsg("bot", "Route-Suche ist gerade langsam. Versuch’s gleich nochmal oder nimm einen kleineren Radius.");
     }
   }
 
+  // Route: Auswahl
   if (state.step === "route_pick"){
-    if (raw.toLowerCase().includes("zurück")) {
+    if (raw.toLowerCase().includes("zurück") || raw.toLowerCase().includes("zurueck")){
       state.step = "after_plans";
       saveState();
       pushMsg("bot", "[CARDS:PLANS]");
       return pushMsg("bot", "Okay — zurück zu den Plänen.");
     }
+
     const idx = Number(raw) - 1;
     const pick = state.routeSearch?.results?.[idx];
-    if (!pick) return pushMsg("bot", "Bitte eine Zahl 1–10 wählen.");
-    pushMsg("bot", "Lade Route… (Geometrie & Karte)");
+    if (!pick) return pushMsg("bot", "Bitte eine Zahl 1–10 wählen (oder „Zurück“).");
+
+    pushMsg("bot", "Lade Route + Wetter…");
     try{
       const route = await loadRouteGeometry(pick.id);
-      state.route = route;
+
+      // Wetter am Startpunkt
+      const [lat, lon] = route.coords[0];
+      let weather = null;
+      try{
+        weather = await fetchWeather(lat, lon);
+      }catch{
+        weather = null;
+      }
+
+      state.route = { ...route, weather };
       state.step = "after_plans";
       saveState();
+
       pushMsg("bot", "[CARDS:ROUTE_MAP]");
-      pushMsg("bot", "Route gesetzt. Wenn du willst: „Neue Tagesform“ → Pläne basieren dann auf dieser Route.");
+      pushMsg("bot", "Route gesetzt. Tipp: „Neue Tagesform“ → Pläne basieren dann auf dieser Route.");
       pushMsg("bot", "[CARDS:PLANS]");
       return pushMsg("bot", "Was möchtest du als Nächstes?");
     }catch(e){
       state.step = "after_plans";
       saveState();
-      return pushMsg("bot", "Diese Route ist zu komplex/leer für die Beta-Darstellung. Nimm eine andere Route (oder kleineren Radius).");
+      return pushMsg("bot", "Diese Route ist zu komplex/leer für die Beta. Bitte eine andere auswählen oder Radius verkleinern.");
     }
   }
 
-  // Menus
+  // Menüs
   if (state.step === "after_plans" || state.step === "after_packlist" || state.step === "after_exit"){
     return handleMenu(raw);
   }
 
-  pushMsg("bot", "Ich habe das nicht ganz verstanden. Tippe z.B. „Route wählen“, „Packliste“, „Assisted Exit“, „Neue Tagesform“ oder „Profil ändern“.");
+  pushMsg("bot", "Ich habe das nicht ganz verstanden. Tippe z.B. „Route wählen“, „Packliste“, „Assisted Exit“, „Neue Tagesform“, „Profil ändern“.");
 }
 
 function handleMenu(raw){
