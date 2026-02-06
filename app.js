@@ -663,23 +663,22 @@ async function chatLoadRouteByIndex(idx){
 
     saveState();
 
-    chatPush("bot",`Route gesetzt: ${route.name} (~${route.lengthKm} km).`);
-    if (state.weather){
-      const w = state.weather;
-      chatPush("bot",`Wetter: ${w.tempC ?? "?"}°C • Wind ${w.windKmh ?? "?"} km/h • Regenrisiko ~${w.rainChance ?? "?"}%`);
-    } else {
-      chatPush("bot","Wetter konnte gerade nicht geladen werden.");
-    }
+    // ✅ Statt Text-Spam: strukturierte Route-Zusammenfassung (Card)
+const row = document.createElement("div");
+row.className = "msg bot";
+const wrap = document.createElement("div");
 
-    if (state.exits.length){
-      const top = state.exits[0];
-      chatPush("bot",`Assisted Exit: Nächste Option ist meist „${top.kind}: ${top.name}“ (~${top.distToRouteM} m von der Route).`);
-    } else {
-      chatPush("bot","Assisted Exit: Ich habe für diese Route gerade keine nahen Exit-Punkte gefunden.");
-    }
+// (Falls du die Funktion noch nicht eingefügt hast: chatRouteSummaryCard() hinzufügen wie erklärt)
+const summary = chatRouteSummaryCard();
+if (summary) wrap.appendChild(summary);
 
-    state.chat.step="after_route"; saveState();
-    chatPush("bot","Was möchtest du als Nächstes? (Pläne berechnen / Assisted Exit / Packliste / Karte öffnen)");
+row.appendChild(wrap);
+chatEl.appendChild(row);
+
+state.chat.step = "after_route";
+saveState();
+renderChat();
+return;
   }catch{
     chatPush("bot","Diese Route konnte ich nicht sauber laden. Bitte wähle eine andere Nummer.");
     state.chat.step="pick_route"; saveState();
