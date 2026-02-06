@@ -230,3 +230,60 @@ button{
 .chat-card__actions button.secondary {
   background: #333;
 }
+/* ===== Route Summary Card ===== */
+.summary-card {
+  background:#171717;
+  border:1px solid #2a2a2a;
+  border-radius:16px;
+  padding:14px;
+  margin:12px 0;
+}
+
+.summary-card__title {
+  font-weight:700;
+  font-size:16px;
+  margin-bottom:6px;
+}
+
+.summary-grid {
+  display:grid;
+  grid-template-columns: 1fr 1fr;
+  gap:10px;
+  margin-top:10px;
+}
+
+.summary-pill {
+  background:#222;
+  border:1px solid #2f2f2f;
+  border-radius:12px;
+  padding:10px;
+  font-size:13px;
+}
+
+.summary-pill strong{
+  display:block;
+  font-size:12px;
+  opacity:.85;
+  margin-bottom:3px;
+}
+
+.summary-actions{
+  display:flex;
+  gap:10px;
+  margin-top:12px;
+}
+
+.summary-actions button{
+  flex:1;
+  border:none;
+  border-radius:12px;
+  padding:10px 12px;
+  font-weight:600;
+  font-size:13px;
+  background:#2f7cf6;
+  color:white;
+}
+
+.summary-actions button.secondary{
+  background:#333;
+}
