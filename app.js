@@ -29,6 +29,24 @@ const defaultState = {
 let state = loadState();
 
 // ---------- Helpers ----------
+async function fetchWeather(lat, lon){
+  // Open-Meteo – kein API-Key nötig
+  const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,precipitation,wind_speed_10m&hourly=precipitation_probability&forecast_days=1`;
+  const resp = await fetch(url);
+  if (!resp.ok) throw new Error("Weather API Fehler");
+  const data = await resp.json();
+
+  const tempC = data?.current?.temperature_2m ?? null;
+  const windKmh = data?.current?.wind_speed_10m ?? null;
+
+  let rainChance = null;
+  const probs = data?.hourly?.precipitation_probability;
+  if (Array.isArray(probs) && probs.length){
+    rainChance = Math.max(...probs.slice(0, 12));
+  }
+
+  return { tempC, windKmh, rainChance };
+}
 function nowLabel(){
   const d = new Date();
   return d.toLocaleTimeString([], {hour:"2-digit", minute:"2-digit"});
