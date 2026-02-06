@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#0b0b0c" />
+  <meta name="description" content="SafeTrek Beta – Adaptive Outdoor Planning für reales Leben." />
+
+  <title>SafeTrek Beta</title>
+
+  <link rel="manifest" href="manifest.json" />
+  <link rel="stylesheet" href="styles.css" />
+
+  <!-- iOS Home-Screen -->
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar__title">
+      <div class="dot"></div>
+      <div>
+        <div class="appname">SafeTrek</div>
+        <div class="apptag">Beta • Adaptive Outdoor Planning</div>
+      </div>
+    </div>
+    <button id="resetBtn" class="ghost" title="Alles zurücksetzen">Reset</button>
+  </header>
+
+  <main class="chat" id="chat"></main>
+
+  <footer class="composer">
+    <div id="quickReplies" class="quick"></div>
+
+    <form id="form" class="form">
+      <input id="input" class="input" placeholder="Antwort eingeben…" autocomplete="off" />
+      <button class="send" type="submit">Senden</button>
+    </form>
+
+    <div class="fineprint">
+      Hinweis: Kein Notruf. Kein Ersatz für alpine Beratung/Bergrettung. Bei Gefahr lokale Rettungsdienste kontaktieren.
+    </div>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
