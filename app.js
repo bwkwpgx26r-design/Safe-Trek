@@ -1,6 +1,7 @@
-/* SafeTrek – App Look + Views + Route Detail + Chatbot Flow
+/* SafeTrek – App Look + Concierge-Chat (A)
    Views: splash -> home -> dashboard -> route -> chat
-   Fix black map: init/fit only when view is visible + repeated invalidateSize
+   Chat führt ALLES: Region/Radius/Route-Auswahl passiert im Chat, wenn nötig.
+   Dashboard ist nur optionaler Shortcut.
 */
 
 const $ = (id) => document.getElementById(id);
@@ -48,10 +49,9 @@ if ("serviceWorker" in navigator) {
 }
 
 // ---------- App State ----------
-const STORAGE_KEY = "safetrek_app_v1";
+const STORAGE_KEY = "safetrek_app_v2_concierge";
 
 const defaultState = {
-  // selection
   selectedRegion: "München",
   radiusKm: 15,
   candidates: [],
@@ -59,12 +59,18 @@ const defaultState = {
   weather: null,         // {tempC, windKmh, rainChance}
   exits: [],             // {kind,name,lat,lon,distToRouteM}
 
-  // chat profile
   chat: {
-    step: "idle", // starts when open chat
+    step: "idle",
     profile: { stamina:null, breakNeed:null, safety:null },
     daily: { energy:null, pain:null, mental:null },
     wantsSuggestions: null,
+
+    // chat-local route search
+    chatRegion: null,
+    chatRadiusKm: null,
+    chatCandidates: [],
+    chatPicked: null,
+
     history: []
   }
 };
@@ -94,7 +100,7 @@ function showView(which){
   Object.values(views).forEach(v => v.classList.remove("view--active"));
   views[which].classList.add("view--active");
 
-  // black-map fix: if we open route view, force map resize several times
+  // black-map fix: if we open route view, force resize a few times
   if (which === "route") {
     setTimeout(() => invalidateMapSafe(true), 0);
     setTimeout(() => invalidateMapSafe(true), 250);
@@ -104,7 +110,6 @@ function showView(which){
 
 // Splash -> Home
 function bootSplash(){
-  // if logo missing, still works (img may show broken icon; optional)
   setTimeout(() => showView("home"), 1700);
 }
 
@@ -133,7 +138,6 @@ function bboxFromCoords(coords){
   return {minLat,minLon,maxLat,maxLon};
 }
 function distToRouteMeters(routeCoords, lat, lon){
-  // approx: closest route vertex (stride for speed)
   let bestKm=Infinity;
   for (let i=0;i<routeCoords.length;i+=2){
     const [rlat,rlon]=routeCoords[i];
@@ -183,12 +187,11 @@ async function searchTrailWays(regionName, radiusKm){
   for (const w of ways){
     const coords=w.geometry.map(p=>[p.lat,p.lon]);
     const km=lengthKm(coords);
-    if (km<1.2 || km>18) continue; // sane
+    if (km<1.2 || km>18) continue;
     const name=w.tags?.name || w.tags?.ref || "Weg/Trail (OSM)";
     candidates.push({ id:w.id, name, lengthKm: Math.round(km*10)/10 });
   }
 
-  // prefer longer (more “route-like”), unique names
   candidates.sort((a,b)=>b.lengthKm-a.lengthKm);
   const seen=new Set();
   const unique=[];
@@ -217,7 +220,6 @@ async function loadWayGeometry(wayId){
   return { id: wayId, name, coords, lengthKm: km, bbox: bboxFromCoords(coords) };
 }
 
-// Exit POIs in bbox, then filter by distance to route
 async function fetchExitPOIsNearRoute(route){
   const b = route.bbox;
   const q = `
@@ -290,15 +292,12 @@ function ensureMap(){
 
 function invalidateMapSafe(force=false){
   if (!leafletMap) return;
-  try{
-    leafletMap.invalidateSize(force);
-  }catch{}
+  try{ leafletMap.invalidateSize(force); }catch{}
 }
 
 function drawRouteAndExits(route, exits){
   ensureMap();
 
-  // clear old
   if (routePolyline){ routePolyline.remove(); routePolyline=null; }
   for (const m of exitMarkers) m.remove();
   exitMarkers=[];
@@ -324,13 +323,18 @@ function drawRouteAndExits(route, exits){
   setTimeout(()=>invalidateMapSafe(true), 900);
 }
 
-// global events that often fix “black map”
 window.addEventListener("orientationchange", ()=> setTimeout(()=>invalidateMapSafe(true), 350));
 document.addEventListener("visibilitychange", ()=>{
   if (!document.hidden) setTimeout(()=>invalidateMapSafe(true), 250);
 });
 
 // ---------- Dashboard UI ----------
+function escapeHtml(s){
+  return String(s).replace(/[&<>"']/g, (m)=>({
+    "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#039;"
+  }[m]));
+}
+
 function renderRouteList(){
   routeList.innerHTML="";
   state.candidates.forEach((c, idx)=>{
@@ -346,12 +350,6 @@ function renderRouteList(){
   });
 }
 
-function escapeHtml(s){
-  return String(s).replace(/[&<>"']/g, (m)=>({
-    "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#039;"
-  }[m]));
-}
-
 async function openRouteById(wayId){
   routeStatus.textContent="";
   try{
@@ -364,18 +362,15 @@ async function openRouteById(wayId){
     const route = await loadWayGeometry(wayId);
     state.selectedRoute = route;
 
-    // weather at startpoint
     const [lat, lon] = route.coords[0];
     try{ state.weather = await fetchWeather(lat, lon); }
     catch{ state.weather = null; }
 
-    // exits
     try{ state.exits = await fetchExitPOIsNearRoute(route); }
     catch{ state.exits = []; }
 
     saveState();
 
-    // UI fill
     routeTitle.textContent = route.name;
     routeMeta.textContent = `Distanz: ~${route.lengthKm} km • Exit-Punkte: ${state.exits.length}`;
 
@@ -404,7 +399,6 @@ async function openRouteById(wayId){
       });
     }
 
-    // draw map
     drawRouteAndExits(route, state.exits);
 
   }catch(err){
@@ -413,7 +407,7 @@ async function openRouteById(wayId){
   }
 }
 
-// ---------- Chatbot (dein Programm) ----------
+// ---------- CHAT (Concierge-first) ----------
 function chatPush(role, text){
   state.chat.history.push({role, text, t: new Date().toLocaleTimeString([], {hour:"2-digit", minute:"2-digit"})});
   saveState();
@@ -459,11 +453,27 @@ function renderQuickReplies(){
   else if (s==="ask_energy") ["1","2","3","4","5"].forEach(add);
   else if (s==="ask_pain") ["1","2","3","4","5"].forEach(add);
   else if (s==="ask_mental") ["1","2","3","4","5"].forEach(add);
+
   else if (s==="ask_wantsSuggestions") ["Ja","Nein"].forEach(add);
-  else if (s==="after_route") ["Pläne berechnen","Assisted Exit","Packliste","Andere Route"].forEach(add);
-  else if (s==="after_plans") ["Assisted Exit","Packliste","Andere Route"].forEach(add);
-  else if (s==="after_pack") ["Zurück zu Plänen","Assisted Exit","Andere Route"].forEach(add);
-  else if (s==="after_exit") ["Zurück zu Plänen","Packliste","Andere Route"].forEach(add);
+
+  else if (s==="ask_useExistingRoute") ["Ja, nutzen","Andere Route"].forEach(add);
+
+  else if (s==="ask_region") Object.keys(REGIONS).forEach(add);
+  else if (s==="ask_radius") ["10 km","15 km","25 km"].forEach(add);
+
+  else if (s==="pick_route"){
+    const n = state.chat.chatCandidates.length;
+    for (let i=1;i<=Math.min(n,10);i++) add(String(i));
+    add("Andere Region");
+    add("Abbrechen");
+  }
+
+  else if (s==="after_route") ["Pläne berechnen","Assisted Exit","Packliste","Karte öffnen","Andere Route"].forEach(add);
+  else if (s==="after_plans") ["Assisted Exit","Packliste","Karte öffnen","Andere Route"].forEach(add);
+  else if (s==="after_pack") ["Zurück zu Plänen","Assisted Exit","Karte öffnen","Andere Route"].forEach(add);
+  else if (s==="after_exit") ["Zurück zu Plänen","Packliste","Karte öffnen","Andere Route"].forEach(add);
+
+  else if (s==="idle") ["Neue Planung starten","Dashboard öffnen"].forEach(add);
 }
 
 function computeReadiness(profile, daily){
@@ -473,14 +483,12 @@ function computeReadiness(profile, daily){
   const mental=Number(daily.mental);
   return Math.max(1, Math.min(5, (stamina*1.2 + energy*1.5 + (6-pain)*1.0 + (6-mental)*0.8) / 4.5));
 }
-
 function estimateDurationMin(distanceKm, breakNeed, safety){
   const base=20;
   const breakFactor = breakNeed>=4 ? 1.25 : breakNeed===3 ? 1.15 : 1.05;
   const safetyFactor = safety>=4 ? 1.18 : safety===3 ? 1.12 : 1.05;
   return Math.round(distanceKm*base*breakFactor*safetyFactor);
 }
-
 function buildPlans(routeKm){
   const readiness = computeReadiness(state.chat.profile, state.chat.daily);
   const breakNeed = Number(state.chat.profile.breakNeed);
@@ -521,7 +529,6 @@ function buildPlans(routeKm){
     ]
   };
 }
-
 function packlist(){
   const items=[];
   const breakNeed=Number(state.chat.profile.breakNeed);
@@ -540,10 +547,92 @@ function packlist(){
   return items;
 }
 
+function startChat(){
+  showView("chat");
+
+  if (state.chat.history.length === 0){
+    chatPush("bot","Hi, ich bin SafeTrek (Beta). Ich begleite dich heute zu einer sicheren, machbaren Outdoor-Entscheidung — ohne Leistungsdruck.");
+    chatPush("bot","Hinweis: Kein Notruf. Kein Ersatz für alpine Beratung/Bergrettung.");
+    state.chat.step="ask_stamina"; saveState();
+    chatPush("bot","Zum Start: Wie ist deine grundsätzliche Belastbarkeit? (1–5)");
+  } else {
+    renderChat();
+  }
+}
+
+// --- Concierge route acquisition inside chat ---
+async function chatSearchRoutes(region, radiusKm){
+  chatPush("bot",`Okay. Ich suche passende Wege in der Region ${region} (${radiusKm} km Radius)…`);
+  try{
+    const candidates = await searchTrailWays(region, radiusKm);
+    state.chat.chatCandidates = candidates;
+    saveState();
+    if (!candidates.length){
+      state.chat.step = "ask_radius"; saveState();
+      return chatPush("bot","Ich habe gerade keine geeigneten Wege gefunden. Wähle bitte einen anderen Radius (10/15/25 km) oder eine andere Region.");
+    }
+
+    chatPush("bot","Ich habe Vorschläge gefunden. Wähle eine Nummer:");
+    candidates.slice(0,10).forEach((c,i)=>{
+      chatPush("bot",`${i+1}. ${c.name} (~${c.lengthKm} km)`);
+    });
+    state.chat.step="pick_route"; saveState();
+  }catch{
+    state.chat.step="ask_radius"; saveState();
+    chatPush("bot","Die Routensuche ist gerade langsam (OpenStreetMap/Overpass). Versuch’s bitte nochmal oder nimm 10 km Radius.");
+  }
+}
+
+async function chatLoadRouteByIndex(idx){
+  const pick = state.chat.chatCandidates[idx];
+  if (!pick) return chatPush("bot","Bitte wähle eine gültige Nummer.");
+  chatPush("bot","Lade Route, Wetter und Assisted Exit…");
+
+  try{
+    const route = await loadWayGeometry(pick.id);
+    state.selectedRoute = route;
+
+    const [lat, lon] = route.coords[0];
+    try{ state.weather = await fetchWeather(lat, lon); }catch{ state.weather = null; }
+    try{ state.exits = await fetchExitPOIsNearRoute(route); }catch{ state.exits = []; }
+
+    // sync also to dashboard preferences
+    state.selectedRegion = state.chat.chatRegion || state.selectedRegion;
+    state.radiusKm = state.chat.chatRadiusKm || state.radiusKm;
+
+    saveState();
+
+    chatPush("bot",`Route gesetzt: ${route.name} (~${route.lengthKm} km).`);
+    if (state.weather){
+      const w = state.weather;
+      chatPush("bot",`Wetter: ${w.tempC ?? "?"}°C • Wind ${w.windKmh ?? "?"} km/h • Regenrisiko ~${w.rainChance ?? "?"}%`);
+    } else {
+      chatPush("bot","Wetter konnte gerade nicht geladen werden.");
+    }
+
+    if (state.exits.length){
+      const top = state.exits[0];
+      chatPush("bot",`Assisted Exit: Nächste Option ist meist „${top.kind}: ${top.name}“ (~${top.distToRouteM} m von der Route).`);
+    } else {
+      chatPush("bot","Assisted Exit: Ich habe für diese Route gerade keine nahen Exit-Punkte gefunden.");
+    }
+
+    state.chat.step="after_route"; saveState();
+    chatPush("bot","Was möchtest du als Nächstes? (Pläne berechnen / Assisted Exit / Packliste / Karte öffnen)");
+  }catch{
+    chatPush("bot","Diese Route konnte ich nicht sauber laden. Bitte wähle eine andere Nummer.");
+    state.chat.step="pick_route"; saveState();
+  }
+}
+
 function handleChatInput(raw){
   chatPush("user", raw);
+  const s = state.chat.step;
 
-  const s=state.chat.step;
+  // global commands
+  const low = String(raw).toLowerCase();
+  if (low.includes("dashboard öffnen")) { showView("dash"); return; }
+  if (low.includes("neue planung")) { state.chat = structuredClone(defaultState.chat); saveState(); startChat(); return; }
 
   if (s==="ask_stamina"){
     const n = Number(raw); if (!(n>=1 && n<=5)) return chatPush("bot","Bitte 1–5.");
@@ -589,43 +678,118 @@ function handleChatInput(raw){
   }
 
   if (s==="ask_wantsSuggestions"){
-    const t=String(raw).toLowerCase();
-    if (t.startsWith("n")){
+    if (low.startsWith("n")){
       state.chat.wantsSuggestions=false; saveState();
       state.chat.step="idle";
-      return chatPush("bot","Okay. Wenn du später willst, starte eine Route im Dashboard oder tippe „Route“.");
+      return chatPush("bot","Okay. Wenn du später willst: „Neue Planung starten“.");
     }
     state.chat.wantsSuggestions=true; saveState();
 
-    if (!state.selectedRoute){
-      state.chat.step="idle";
-      chatPush("bot","Damit ich personalisieren kann, wähle zuerst im Dashboard eine Route (Region → Routen laden → Route ansehen).");
-      return chatPush("bot","Tippe „Dashboard“, um zurückzugehen.");
+    // Concierge-first:
+    // If a route exists, offer to use it; otherwise go straight to region.
+    if (state.selectedRoute){
+      state.chat.step="ask_useExistingRoute"; saveState();
+      return chatPush("bot",`Ich habe bereits eine Route gespeichert: „${state.selectedRoute.name}“. Soll ich diese verwenden?`);
     }
 
-    state.chat.step="after_route";
-    chatPush("bot",`Super. Aktive Route: ${state.selectedRoute.name} (~${state.selectedRoute.lengthKm} km).`);
-    return chatPush("bot","Was möchtest du jetzt? (Pläne berechnen / Assisted Exit / Packliste)");
+    state.chat.step="ask_region"; saveState();
+    chatPush("bot","Alles klar. In welcher Region möchtest du unterwegs sein?");
+    chatPush("bot","Tipp: Wenn du unsicher bist, wähle die Region, die sich heute mental am leichtesten anfühlt.");
+    return;
   }
 
-  if (s==="after_route" || s==="after_plans" || s==="after_pack" || s==="after_exit"){
-    const t=String(raw).toLowerCase();
+  if (s==="ask_useExistingRoute"){
+    if (low.includes("ja")){
+      state.chat.step="after_route"; saveState();
+      chatPush("bot","Super — ich nutze die gespeicherte Route.");
+      return chatPush("bot","Was möchtest du als Nächstes? (Pläne berechnen / Assisted Exit / Packliste / Karte öffnen)");
+    }
+    // other route
+    state.chat.step="ask_region"; saveState();
+    return chatPush("bot","Okay. Welche Region möchtest du heute? (München, Garmisch, Salzburg, Innsbruck)");
+  }
 
-    if (t.includes("dashboard")){
-      showView("dash");
+  if (s==="ask_region"){
+    const region = Object.keys(REGIONS).find(r => r.toLowerCase() === low);
+    if (!region) return chatPush("bot","Bitte wähle: München, Garmisch, Salzburg oder Innsbruck.");
+    state.chat.chatRegion = region;
+    state.chat.step="ask_radius"; saveState();
+    return chatPush("bot","Wie groß soll der Suchradius sein? (10 km / 15 km / 25 km)");
+  }
+
+  if (s==="ask_radius"){
+    let km = null;
+    if (low.includes("10")) km = 10;
+    if (low.includes("15")) km = 15;
+    if (low.includes("25")) km = 25;
+    if (![10,15,25].includes(km)) return chatPush("bot","Bitte 10 km, 15 km oder 25 km wählen.");
+    state.chat.chatRadiusKm = km;
+    saveState();
+    return chatSearchRoutes(state.chat.chatRegion, km);
+  }
+
+  if (s==="pick_route"){
+    if (low.includes("abbrechen")){
+      state.chat.step="idle"; saveState();
+      return chatPush("bot","Okay — abgebrochen. Du kannst jederzeit „Neue Planung starten“.");
+    }
+    if (low.includes("andere region")){
+      state.chat.step="ask_region"; saveState();
+      return chatPush("bot","Welche Region möchtest du stattdessen?");
+    }
+    const idx = Number(raw) - 1;
+    if (!Number.isFinite(idx) || idx<0 || idx>=state.chat.chatCandidates.length){
+      return chatPush("bot","Bitte eine Zahl wählen (z.B. 1) oder „Andere Region“.");
+    }
+    return chatLoadRouteByIndex(idx);
+  }
+
+  // after route / plans / pack / exit
+  if (s==="after_route" || s==="after_plans" || s==="after_pack" || s==="after_exit"){
+    if (low.includes("karte")){
+      if (!state.selectedRoute){
+        return chatPush("bot","Noch keine Route gesetzt. Ich kann zuerst Routen suchen (Region wählen).");
+      }
+      // Open route view and draw
+      showView("route");
+      // Fill route view quickly from state
+      routeTitle.textContent = state.selectedRoute.name;
+      routeMeta.textContent = `Distanz: ~${state.selectedRoute.lengthKm} km • Exit-Punkte: ${state.exits.length}`;
+      if (state.weather){
+        const w=state.weather;
+        weatherLine.textContent = `Wetter: ${w.tempC ?? "?"}°C • Wind ${w.windKmh ?? "?"} km/h • Regenrisiko ~${w.rainChance ?? "?"}%`;
+      } else {
+        weatherLine.textContent = "Wetter: konnte gerade nicht geladen werden.";
+      }
+      exitList.innerHTML="";
+      (state.exits || []).slice(0,10).forEach(e=>{
+        const div=document.createElement("div");
+        div.className="item";
+        div.innerHTML = `<div class="itemTitle">${e.kind}: ${escapeHtml(e.name)}</div><div class="itemMeta">~${e.distToRouteM} m von der Route</div>`;
+        exitList.appendChild(div);
+      });
+      drawRouteAndExits(state.selectedRoute, state.exits || []);
+      // keep chat state; user can come back
       return;
     }
 
-    if (t.includes("andere")){
-      showView("dash");
-      return chatPush("bot","Okay — wähle im Dashboard eine andere Route.");
+    if (low.includes("andere route")){
+      // Keep profile/daily. Just re-run route selection.
+      state.chat.step="ask_region";
+      state.chat.chatCandidates=[];
+      state.chat.chatPicked=null;
+      saveState();
+      return chatPush("bot","Okay. Welche Region möchtest du jetzt? (München, Garmisch, Salzburg, Innsbruck)");
     }
 
-    if (t.includes("pläne") || t.includes("plaene")){
-      if (!state.selectedRoute) return chatPush("bot","Bitte zuerst eine Route im Dashboard auswählen.");
-      const result=buildPlans(state.selectedRoute.lengthKm);
-      state.chat._plans = result;
-      saveState();
+    if (low.includes("pläne") || low.includes("plaene")){
+      if (!state.selectedRoute) {
+        state.chat.step="ask_region"; saveState();
+        chatPush("bot","Kein Problem — ich suche zuerst eine Route mit dir.");
+        return chatPush("bot","Welche Region möchtest du?");
+      }
+      const result = buildPlans(state.selectedRoute.lengthKm);
+      state.chat._plans = result; saveState();
 
       chatPush("bot",`Readiness: ${result.readiness.toFixed(1)} / 5`);
       chatPush("bot",result.guidance);
@@ -638,43 +802,53 @@ function handleChatInput(raw){
       return chatPush("bot","Als nächstes: Assisted Exit oder Packliste?");
     }
 
-    if (t.includes("pack")){
-      const items=packlist();
+    if (low.includes("pack")){
+      const items = packlist();
       chatPush("bot","Packliste (begründet):");
       items.forEach(it=>chatPush("bot",`• ${it.name} — ${it.why}`));
       state.chat.step="after_pack"; saveState();
       return chatPush("bot","Als nächstes: Assisted Exit oder zurück zu Plänen?");
     }
 
-    if (t.includes("exit")){
+    if (low.includes("exit")){
+      if (!state.selectedRoute){
+        state.chat.step="ask_region"; saveState();
+        chatPush("bot","Ich kann Assisted Exit erst sinnvoll anbieten, wenn wir eine Route gewählt haben.");
+        return chatPush("bot","Welche Region möchtest du?");
+      }
+
       if (!state.exits?.length){
         state.chat.step="after_exit"; saveState();
-        return chatPush("bot","Ich habe für diese Route gerade keine Exit-Punkte gefunden. Versuch eine andere Route/Region.");
+        return chatPush("bot","Ich habe für diese Route gerade keine nahen Exit-Punkte gefunden. Versuch eine andere Route/Region.");
       }
+
       chatPush("bot","Assisted Exit (nahe Optionen):");
       state.exits.slice(0,6).forEach(e=>chatPush("bot",`• ${e.kind}: ${e.name} (~${e.distToRouteM} m von der Route)`));
+
+      // Professional hint
+      chatPush("bot","Wenn du abbrechen möchtest: wähle die nächstliegende Option, reduziere Komplexität (breiter Weg, weniger Steigung) und setze einen klaren Umkehrzeitpunkt.");
+
       state.chat.step="after_exit"; saveState();
-      return chatPush("bot","Wenn du willst, gehe im Route-Screen auf die Karte: dort sind die Marker sichtbar.");
+      return chatPush("bot","Möchtest du zurück zu Plänen oder zur Packliste?");
     }
 
-    return chatPush("bot","Optionen: Pläne berechnen, Assisted Exit, Packliste, Andere Route, Dashboard");
+    return chatPush("bot","Optionen: Pläne berechnen, Assisted Exit, Packliste, Karte öffnen, Andere Route");
+  }
+
+  if (s==="idle"){
+    if (low.includes("dashboard")){
+      showView("dash"); return;
+    }
+    if (low.includes("neu")){
+      state.chat = structuredClone(defaultState.chat);
+      saveState();
+      startChat();
+      return;
+    }
+    return chatPush("bot","Tippe „Neue Planung starten“ oder „Dashboard öffnen“.");
   }
 
   chatPush("bot","Ich bin unsicher. Nutze die Buttons unten.");
-}
-
-// ---------- Chat open ----------
-function startChat(){
-  showView("chat");
-
-  if (state.chat.history.length === 0){
-    chatPush("bot","Hi, ich bin SafeTrek (Beta). Ich helfe dir, heute sichere Outdoor-Entscheidungen zu treffen — ohne Leistungsdruck.");
-    chatPush("bot","Vorab: Kein Notruf. Kein Ersatz für alpine Beratung/Bergrettung.");
-    state.chat.step="ask_stamina"; saveState();
-    chatPush("bot","Wie ist deine grundsätzliche Belastbarkeit? (1–5)");
-  } else {
-    renderChat();
-  }
 }
 
 // ---------- UI wiring ----------
@@ -688,10 +862,11 @@ btnLogin.onclick = () => alert("Login ist in dieser Beta noch nicht aktiv.");
 btnRegister.onclick = () => alert("Registrieren ist in dieser Beta noch nicht aktiv.");
 btnGuest.onclick = () => showView("dash");
 
-// Dashboard
+// Dashboard restore
 regionSelect.value = state.selectedRegion;
 radiusSelect.value = String(state.radiusKm);
 
+// Dashboard find routes
 btnFindRoutes.onclick = async () => {
   const region = regionSelect.value;
   const radiusKm = Number(radiusSelect.value);
@@ -715,15 +890,15 @@ btnFindRoutes.onclick = async () => {
   }
 };
 
+// Chat from dashboard (without route is now totally fine)
 btnOpenChatNoRoute.onclick = () => startChat();
 
 btnBackToDash.onclick = () => showView("dash");
 
+// Start chat from route detail
 btnStartChatWithRoute.onclick = () => startChat();
 
-// Route view: fill is done in openRouteById()
-
-// Chat form
+// Chat form submit
 form.addEventListener("submit", (e) => {
   e.preventDefault();
   const val = input.value.trim();
@@ -732,9 +907,8 @@ form.addEventListener("submit", (e) => {
   handleChatInput(val);
 });
 
-// ---------- Restore UI ----------
+// Restore dashboard list if cached
 function restore(){
-  // ensure dash state
   regionSelect.value = state.selectedRegion;
   radiusSelect.value = String(state.radiusKm);
   if (state.candidates?.length) renderRouteList();
