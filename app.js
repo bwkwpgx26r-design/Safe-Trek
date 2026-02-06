@@ -609,10 +609,21 @@ async function chatSearchRoutes(region, radiusKm){
       return chatPush("bot","Ich habe gerade keine geeigneten Wege gefunden. Wähle bitte einen anderen Radius (10/15/25 km) oder eine andere Region.");
     }
 
-    chatPush("bot","Ich habe Vorschläge gefunden. Wähle eine Nummer:");
-    candidates.slice(0,10).forEach((c,i)=>{
-      chatPush("bot",`${i+1}. ${c.name} (~${c.lengthKm} km)`);
-    });
+    chatPush("bot","Ich habe passende Touren gefunden. Wähle eine Route:");
+
+state.chat.chatCandidates.slice(0,10).forEach((route, index)=>{
+  const row = document.createElement("div");
+  row.className = "msg bot";
+
+  const wrap = document.createElement("div");
+  wrap.appendChild(chatRouteCard(route, index));
+
+  row.appendChild(wrap);
+  chatEl.appendChild(row);
+});
+
+state.chat.step = "pick_route";
+saveState();
     state.chat.step="pick_route"; saveState();
   }catch{
     state.chat.step="ask_radius"; saveState();
