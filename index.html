@@ -2,138 +2,189 @@
 <html lang="de">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-  <meta name="theme-color" content="#0b0b0c" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0b0b0b" />
+  <title>SafeTrek</title>
+
+  <!-- PWA -->
+  <link rel="manifest" href="./manifest.json" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 
-  <title>SafeTrek</title>
-  <link rel="manifest" href="manifest.json" />
-  <link rel="stylesheet" href="styles.css" />
+  <!-- Basic Icon (you can replace later) -->
+  <link rel="icon" href="./icon-192.png" />
 
-  <!-- Leaflet -->
+  <!-- Leaflet (Map) -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <link rel="stylesheet" href="./styles.css" />
 </head>
 
 <body>
-  <header class="topbar">
-    <div class="topbar__title">
-      <div class="dot"></div>
-      <div>
-        <div class="appname">SafeTrek</div>
-        <div class="apptag">Beta • Adaptive Outdoor Planning</div>
+  <!-- App Shell -->
+  <div class="app">
+
+    <!-- Top Bar -->
+    <header class="topbar">
+      <div class="topbar__title">SafeTrek</div>
+      <div class="topbar__right">
+        <button class="iconbtn" id="btnOpenChat" type="button" title="Chat öffnen">💬</button>
+        <button class="iconbtn" id="btnOpenDash" type="button" title="Dashboard">🏠</button>
       </div>
-    </div>
-    <button id="resetBtn" class="ghost">Reset</button>
-  </header>
+    </header>
 
-  <!-- SPLASH -->
-  <section id="view-splash" class="view view--active">
-    <div class="splash">
-      <img id="splashLogo" class="splash__logo" src="Logo.PNG" alt="SafeTrek Logo" />
-      <div class="splash__title">SafeTrek</div>
-      <div class="splash__subtitle">Outdoor, das sich an Menschen anpasst.</div>
-    </div>
-  </section>
+    <!-- Views -->
+    <main class="views">
 
-  <!-- HOME -->
-  <section id="view-home" class="view">
-    <div class="screen">
-      <h2>Willkommen</h2>
-      <p class="muted">Wähle, wie du starten möchtest.</p>
-
-      <div class="grid">
-        <button class="primary" id="btnLogin">Anmelden</button>
-        <button class="primary" id="btnRegister">Registrieren</button>
-        <button class="ghost big" id="btnGuest">Als Gast fortfahren</button>
-      </div>
-
-      <div class="note">
-        <b>Hinweis:</b> Login/Registrierung sind in dieser Beta noch Platzhalter (ohne Server).
-      </div>
-    </div>
-  </section>
-
-  <!-- DASHBOARD -->
-  <section id="view-dashboard" class="view">
-    <div class="screen">
-      <h2>Dashboard</h2>
-      <p class="muted">Wähle eine Region und eine Route – oder starte direkt den SafeTrek-Chat.</p>
-
-      <div class="card">
-        <div class="row">
-          <div>
-            <div class="label">Region</div>
-            <select id="regionSelect" class="select">
-              <option>München</option>
-              <option>Garmisch</option>
-              <option>Salzburg</option>
-              <option>Innsbruck</option>
-            </select>
+      <!-- DASHBOARD -->
+      <section class="view" data-view="dash" id="viewDash">
+        <div class="panel">
+          <div class="panel__title">Start</div>
+          <div class="panel__desc">
+            Moderne Outdoor-Planung, die sich an dich anpasst.
           </div>
-          <div>
-            <div class="label">Radius</div>
-            <select id="radiusSelect" class="select">
-              <option value="10">10 km</option>
-              <option value="15" selected>15 km</option>
-              <option value="25">25 km</option>
-            </select>
+
+          <div class="grid2">
+            <div class="card">
+              <div class="card__title">Chat starten</div>
+              <div class="card__meta">Concierge-Modus • Profil + Touren</div>
+              <button class="primary" id="dashStartChat" type="button">Jetzt starten</button>
+            </div>
+
+            <div class="card">
+              <div class="card__title">Routen finden</div>
+              <div class="card__meta">Region + Radius • Vorschläge als Cards</div>
+
+              <label class="field">
+                <span>Region</span>
+                <input id="dashRegion" placeholder="z.B. München / Salzburg" />
+              </label>
+
+              <label class="field">
+                <span>Radius (km)</span>
+                <input id="dashRadius" type="number" min="5" max="200" value="20" />
+              </label>
+
+              <button class="secondary" id="dashSuggest" type="button">Touren vorschlagen</button>
+            </div>
+          </div>
+
+          <div class="hint">
+            Tipp: Du kannst die App als Icon auf dem Home Screen speichern (Safari → Teilen → „Zum Home-Bildschirm“).
           </div>
         </div>
+      </section>
 
-        <button class="primary full" id="btnFindRoutes">Routen laden</button>
-        <div id="routeStatus" class="muted small"></div>
-      </div>
+      <!-- CHAT -->
+      <section class="view" data-view="chat" id="viewChat">
+        <div class="chatWrap">
+          <div id="chatMessages" class="chatMessages"></div>
 
-      <div id="routeList" class="list"></div>
+          <div id="quickReplies" class="quickReplies"></div>
 
-      <div class="card">
-        <button class="ghost full" id="btnOpenChatNoRoute">Chat starten (ohne Route)</button>
-      </div>
-    </div>
-  </section>
+          <div class="chatComposer">
+            <input id="chatInput" placeholder="Schreibe hier…" autocomplete="off" />
+            <button id="chatSend" type="button" class="primary">Senden</button>
+          </div>
+        </div>
+      </section>
 
-  <!-- ROUTE DETAIL -->
-  <section id="view-route" class="view">
-    <div class="screen">
-      <button class="ghost" id="btnBackToDash">← Zurück</button>
+      <!-- ROUTE / MAP -->
+      <section class="view" data-view="route" id="viewRoute">
+        <div class="routeHeader">
+          <button id="btnBackRoute" class="secondary" type="button">← Zurück</button>
+          <div class="routeHeader__title">Karte</div>
+          <button id="btnRecenter" class="secondary" type="button">Zentrieren</button>
+        </div>
 
-      <div class="card">
-        <h3 id="routeTitle">Route</h3>
-        <div id="routeMeta" class="muted small"></div>
-        <div id="weatherLine" class="muted small"></div>
-        <div class="mapBox" id="map"></div>
-      </div>
+        <div id="map" class="map"></div>
 
-      <div class="card">
-        <h3>Assisted Exit (echt)</h3>
-        <p class="muted small">Kein Notruf. Reale Optionen in Routennähe (Bus/Bahn/Parkplatz/Seilbahn).</p>
-        <div id="exitList" class="list"></div>
-      </div>
+        <div class="routePanel">
+          <div class="routePanel__title">Route-Infos</div>
+          <div id="routeInfo" class="routeInfo">Wähle eine Route im Chat.</div>
+        </div>
+      </section>
 
-      <div class="card">
-        <button class="primary full" id="btnStartChatWithRoute">SafeTrek-Chat starten</button>
-      </div>
-    </div>
-  </section>
+    </main>
 
-  <!-- CHAT -->
-  <section id="view-chat" class="view">
-    <main class="chat" id="chat"></main>
+  </div>
 
-    <footer class="composer">
-      <div id="quickReplies" class="quick"></div>
-      <form id="form" class="form">
-        <input id="input" class="input" placeholder="Antwort eingeben…" autocomplete="off" />
-        <button class="send" type="submit">Senden</button>
-      </form>
-      <div class="fineprint">
-        Hinweis: Kein Notruf. Kein Ersatz für alpine Beratung/Bergrettung. Bei Gefahr: lokale Rettungsdienste kontaktieren.
-      </div>
-    </footer>
-  </section>
+  <script>
+    // Minimal view switch fallback if app.js calls showView()
+    window.showView = function(name){
+      document.querySelectorAll("[data-view]").forEach(v=>{
+        v.style.display = (v.getAttribute("data-view") === name) ? "block" : "none";
+      });
+      // store for app.js compatibility
+      try {
+        const raw = localStorage.getItem("safetreks_state");
+        if(raw){
+          const st = JSON.parse(raw);
+          st.view = name;
+          localStorage.setItem("safetreks_state", JSON.stringify(st));
+        }
+      } catch(e){}
+    };
+  </script>
 
-  <script src="app.js"></script>
+  <script src="./app.js"></script>
+
+  <script>
+    // Simple dashboard wiring (optional helper)
+    const dashStartChat = document.getElementById("dashStartChat");
+    const dashSuggest = document.getElementById("dashSuggest");
+    const dashRegion = document.getElementById("dashRegion");
+    const dashRadius = document.getElementById("dashRadius");
+    const btnOpenDash = document.getElementById("btnOpenDash");
+
+    if(btnOpenDash){
+      btnOpenDash.onclick = () => window.showView("dash");
+    }
+
+    if(dashStartChat){
+      dashStartChat.onclick = () => {
+        // app.js wires btnOpenChat; we trigger that
+        const btn = document.getElementById("btnOpenChat");
+        if(btn) btn.click();
+        else window.showView("chat");
+      };
+    }
+
+    if(dashSuggest){
+      dashSuggest.onclick = () => {
+        // push into chat: "Touren vorschlagen" flow
+        window.showView("chat");
+        // place region/radius into input sequence
+        const input = document.getElementById("chatInput");
+        const send = document.getElementById("chatSend");
+
+        // Try to start chat first
+        const btn = document.getElementById("btnOpenChat");
+        if(btn) btn.click();
+
+        // Then ask for routes
+        setTimeout(()=>{
+          input.value = "Touren vorschlagen";
+          send.click();
+          setTimeout(()=>{
+            if(dashRegion.value.trim()){
+              input.value = dashRegion.value.trim();
+              send.click();
+              setTimeout(()=>{
+                input.value = String(Number(dashRadius.value || 20));
+                send.click();
+              }, 350);
+            }
+          }, 350);
+        }, 300);
+      };
+    }
+
+    // Register service worker
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("./sw.js").catch(()=>{});
+    }
+  </script>
 </body>
 </html>
