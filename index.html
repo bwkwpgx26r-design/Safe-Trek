@@ -1,3 +1,4 @@
+<!-- index.html -->
 <!doctype html>
 <html lang="de">
 <head>
@@ -11,7 +12,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 
-  <!-- Icons (lege logo.png, icon-192.png, icon-512.png im Repo-Root ab) -->
+  <!-- Icons -->
   <link rel="icon" href="./icon-192.png" />
 
   <!-- Leaflet -->
@@ -20,51 +21,48 @@
 
   <link rel="stylesheet" href="./styles.css" />
 </head>
-
 <body>
-  <!-- SPLASH / INTRO -->
+
+  <!-- SPLASH (Logo.PNG, exakt so geschrieben!) -->
   <div id="splash" class="splash">
     <div class="splash__inner">
-      <!-- ⚠️ Datei muss im Repo liegen: logo.png -->
-      <img src="./logo.png" class="splash__logo" alt="SafeTrek Logo">
+      <img id="splashLogo" src="./Logo.PNG" class="splash__logo" alt="SafeTrek Logo">
       <div class="splash__text">SafeTrek</div>
+      <div class="splash__sub">Adaptive Outdoor Planning</div>
     </div>
   </div>
 
   <div class="app">
-    <!-- TOP BAR -->
     <header class="topbar">
       <div class="topbar__title">SafeTrek</div>
       <div class="topbar__right">
-        <!-- diese IDs sind bewusst stabil gehalten -->
-        <button class="iconbtn" id="btnOpenChat" type="button" title="Chat öffnen">💬</button>
         <button class="iconbtn" id="btnOpenDash" type="button" title="Dashboard">🏠</button>
+        <button class="iconbtn" id="btnOpenChat" type="button" title="Chat">💬</button>
+        <button class="iconbtn" id="btnOpenRoute" type="button" title="Karte">🗺️</button>
       </div>
     </header>
 
-    <!-- VIEWS -->
     <main class="views">
-
-      <!-- DASHBOARD -->
+      <!-- DASH -->
       <section class="view" data-view="dash" id="viewDash">
         <div class="panel">
-          <div class="panel__title">Start</div>
-          <div class="panel__desc">Outdoor-Planung, die sich an dich anpasst.</div>
+          <div class="panel__title">Home</div>
+          <div class="panel__desc">Starte als Gast oder plane direkt eine Tour.</div>
 
           <div class="grid2">
             <div class="card">
               <div class="card__title">Chat starten</div>
-              <div class="card__meta">Profil + Touren + Plan A/B/C + Assisted Exit</div>
+              <div class="card__meta">Profil → Region → Radius → Touren → Plan A/B/C → SOS</div>
               <button class="primary" id="dashStartChat" type="button">Jetzt starten</button>
             </div>
 
             <div class="card">
-              <div class="card__title">Touren vorschlagen</div>
-              <div class="card__meta">Schnellstart: Region + Radius → Suche im Chat</div>
+              <div class="card__title">Touren finden</div>
+              <div class="card__meta">Region + Radius → Suche im Chat</div>
 
               <label class="field">
                 <span>Region</span>
-                <input id="dashRegion" placeholder="z.B. München / Salzburg / Innsbruck" />
+                <input id="dashRegion" placeholder="z.B. München, Salzburg, Innsbruck" />
               </label>
 
               <label class="field">
@@ -72,12 +70,12 @@
                 <input id="dashRadius" type="number" min="5" max="200" value="25" />
               </label>
 
-              <button class="secondary" id="dashSuggest" type="button">Touren finden</button>
+              <button class="secondary" id="dashSuggest" type="button">Touren suchen</button>
             </div>
           </div>
 
           <div class="hint">
-            Tipp: In Safari → Teilen → „Zum Home-Bildschirm“, dann fühlt es sich wie eine App an.
+            Tipp: Safari → Teilen → „Zum Home-Bildschirm“ für App-Feeling.
           </div>
         </div>
       </section>
@@ -95,7 +93,7 @@
         </div>
       </section>
 
-      <!-- ROUTE / MAP -->
+      <!-- ROUTE -->
       <section class="view" data-view="route" id="viewRoute">
         <div class="routeHeader">
           <button id="btnBackRoute" class="secondary" type="button">← Zurück</button>
@@ -107,116 +105,61 @@
 
         <div class="routePanel">
           <div class="routePanel__title">Route-Infos</div>
-          <div id="routeInfo" class="routeInfo">Wähle eine Route im Chat.</div>
+          <div id="routeInfo" class="routeInfo">Wähle eine Route oder einen Plan im Chat.</div>
+          <div class="routePanel__actions">
+            <button id="btnSOS" class="danger" type="button">🆘 Ich schaffe es nicht weiter</button>
+          </div>
         </div>
       </section>
-
     </main>
   </div>
 
-  <!-- FALLBACK: view switch (app.js kann das überschreiben, aber das hier ist stabil) -->
-  <script>
-    window.showView = function(name){
-      document.querySelectorAll("[data-view]").forEach(v=>{
-        v.style.display = (v.getAttribute("data-view") === name) ? "block" : "none";
-      });
-
-      // Persist optional (nur falls app.js state so nutzt)
-      try {
-        const raw = localStorage.getItem("safetreks_state");
-        if(raw){
-          const st = JSON.parse(raw);
-          st.view = name;
-          localStorage.setItem("safetreks_state", JSON.stringify(st));
-        }
-      } catch(e){}
-    };
-  </script>
-
-  <!-- APP LOGIC -->
   <script src="./app.js"></script>
 
   <script>
-    // --- UI Wiring ---
-    const btnOpenChat  = document.getElementById("btnOpenChat");
-    const btnOpenDash  = document.getElementById("btnOpenDash");
-    const dashStartChat= document.getElementById("dashStartChat");
-    const dashSuggest  = document.getElementById("dashSuggest");
-    const dashRegion   = document.getElementById("dashRegion");
-    const dashRadius   = document.getElementById("dashRadius");
-
-    // Safe default view
-    window.showView("dash");
-
-    if(btnOpenDash) btnOpenDash.onclick = () => window.showView("dash");
-
-    // Chat öffnen: bevorzugt echte app.js Funktion, sonst View wechseln
-    if(btnOpenChat){
-      btnOpenChat.onclick = () => {
-        if (typeof startChat === "function") startChat();
-        window.showView("chat");
-      };
-    }
-
-    if(dashStartChat){
-      dashStartChat.onclick = () => {
-        if (typeof startChat === "function") startChat();
-        window.showView("chat");
-      };
-    }
-
-    // Touren finden: startet Chat sauber + schickt Region/Radius in den Chat
-    if(dashSuggest){
-      dashSuggest.onclick = () => {
-        // 1) Chat starten (wichtig!)
-        if (typeof startChat === "function") startChat();
-        window.showView("chat");
-
-        // 2) Eingabefelder holen
-        const input = document.getElementById("chatInput");
-        const send  = document.getElementById("chatSend");
-        if(!input || !send) return;
-
-        const region = (dashRegion?.value || "").trim();
-        const radius = String(Number(dashRadius?.value || 25));
-
-        // 3) zuverlässig triggern: "neue planung" (passt zu deinem app.js global command)
-        //    Danach Region + Radius schicken.
-        setTimeout(() => {
-          input.value = "neue planung";
-          send.click();
-
-          setTimeout(() => {
-            if(region){
-              input.value = region;
-              send.click();
-
-              setTimeout(() => {
-                input.value = radius;
-                send.click();
-              }, 350);
-            }
-          }, 450);
-
-        }, 250);
-      };
-    }
-
-    // --- Splash / Intro ---
+    // Splash: wenn Logo.PNG fehlt -> Hinweis
     (function(){
       const splash = document.getElementById("splash");
-      if(!splash) return;
+      const logo = document.getElementById("splashLogo");
+      if(!splash || !logo) return;
+
+      logo.onerror = () => {
+        splash.querySelector(".splash__sub").textContent =
+          "Logo fehlt: Datei muss exakt 'Logo.PNG' heißen";
+      };
 
       const hide = () => splash.classList.add("hide");
       splash.addEventListener("click", hide);
-
-      setTimeout(() => {
-        hide();
-        window.showView("dash");
-      }, 1500);
+      setTimeout(hide, 1500);
     })();
 
-    // --- Service Worker ---
+    // Navigation Buttons
+    document.getElementById("btnOpenDash")?.addEventListener("click", () => showView("dash"));
+    document.getElementById("btnOpenChat")?.addEventListener("click", () => { showView("chat"); startChat(); });
+    document.getElementById("btnOpenRoute")?.addEventListener("click", () => showView("route"));
+    document.getElementById("btnBackRoute")?.addEventListener("click", () => showView("chat"));
+
+    // Dashboard Actions
+    document.getElementById("dashStartChat")?.addEventListener("click", () => { showView("chat"); startChat(); });
+
+    document.getElementById("dashSuggest")?.addEventListener("click", () => {
+      showView("chat");
+      startChat(); // startet Profil/Flow; danach kommen Region/Radius im Chat
+
+      const region = (document.getElementById("dashRegion")?.value || "").trim();
+      const radius = String(Number(document.getElementById("dashRadius")?.value || 25));
+
+      // wir schieben Region/Radius in die Eingabe (nach dem Start)
+      setTimeout(() => {
+        if(region) queueChatMessage(region);
+        setTimeout(() => queueChatMessage(radius), 400);
+      }, 700);
+    });
+
+    // SOS Button -> in app.js umgesetzt
+    document.getElementById("btnSOS")?.addEventListener("click", () => sosFlow());
+
+    // Service Worker
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker.register("./sw.js").catch(()=>{});
     }
